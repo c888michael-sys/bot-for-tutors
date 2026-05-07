@@ -40,6 +40,7 @@ function addStudent(name) {
   const data = getData();
   if (findStudentKey(data, name)) return false;
   data.students[name] = {
+    year: null,
     status: {},
     homework: '',
     lesson: '',

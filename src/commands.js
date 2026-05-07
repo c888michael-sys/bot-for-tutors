@@ -123,7 +123,18 @@ async function handleStudentCmd(msg, tokens, lower) {
     return msg.reply(ok ? `✅ Student *${name}* deleted.` : `"${name}" not found.`);
   }
 
-  return msg.reply('Usage: student add / rename / delete [name]');
+  if (action === 'year') {
+    const name = tokens[2];
+    const year = tokens[3];
+    if (!name || !year) return msg.reply('Usage: student year [name] [year]\nExample: student year Josh Y7');
+    const r = storage.getStudent(name);
+    if (!r) return msg.reply(`"${name}" not found.`);
+    r.student.year = year;
+    storage.saveStudent(r.key, r.student);
+    return msg.reply(`✅ Set *${r.key}* to ${year}.`);
+  }
+
+  return msg.reply('Usage: student add / rename / delete / year [name]');
 }
 
 async function handleInputStatus(msg, tokens, lower) {

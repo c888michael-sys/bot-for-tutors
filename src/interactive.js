@@ -12,11 +12,11 @@ async function sendMainMenu(msg, client) {
   const chatId = msg.from;
   setSession(chatId, 'MAIN_MENU');
   return msg.reply(
-    `*Tutor Bot Menu*\n\n` +
-    `1 — View/manage a student\n` +
-    `2 — Add a student\n` +
-    `3 — Help & commands\n\n` +
-    `_Reply with a number._`
+    `*🎓 Tutor Bot*\n\n` +
+    `1 — View / Manage a Student\n` +
+    `2 — Active Reminders\n` +
+    `3 — Setup (Add Student)\n` +
+    `4 — Help & Commands`
   );
 }
 
@@ -32,7 +32,7 @@ async function sendStudentList(msg, nextState) {
 
   const list = names.map((n, i) => `${i + 1} — ${n}`).join('\n');
   setSession(chatId, nextState, { names });
-  return msg.reply(`*Select a student:*\n\n${list}\n\n_Reply with a number._`);
+  return msg.reply(`*👤 Select a Student*\n\n${list}\n\n0 — Back`);
 }
 
 async function sendStudentMenu(msg, studentName) {
@@ -41,16 +41,34 @@ async function sendStudentMenu(msg, studentName) {
   const nextLesson = r?.student?.nextLesson
     ? new Date(r.student.nextLesson).toDateString()
     : 'not set';
+  const year = r?.student?.year || 'not set';
   setSession(chatId, 'STUDENT_MENU', { studentName });
   return msg.reply(
-    `*${studentName}*\n📅 Next lesson: ${nextLesson}\n\n` +
-    `1 — View status\n` +
-    `2 — View homework topics\n` +
-    `3 — View lesson topics\n` +
-    `4 — Set homework content\n` +
-    `5 — Set lesson plan content\n` +
-    `6 — Set next lesson date\n\n` +
-    `_Reply with a number._`
+    `*${studentName}* · ${year}\n📅 Next Lesson: ${nextLesson}\n\n` +
+    `1 — View Status\n` +
+    `2 — View Homework Topics\n` +
+    `3 — View Lesson Topics\n` +
+    `4 — Set Homework Content\n` +
+    `5 — Set Lesson Plan Content\n` +
+    `6 — Set Next Lesson Date\n` +
+    `7 — Snooze Reminders\n` +
+    `8 — Edit Student Info\n` +
+    `\n0 — Back`
+  );
+}
+
+async function sendEditMenu(msg, studentName) {
+  const chatId = msg.from;
+  const r = storage.getStudent(studentName);
+  const year = r?.student?.year || 'not set';
+  setSession(chatId, 'EDIT_MENU', { studentName });
+  return msg.reply(
+    `*✏️ Edit: ${studentName}* · ${year}\n\n` +
+    `1 — Rename Student\n` +
+    `2 — Change Year\n` +
+    `3 — Change Next Lesson Date\n` +
+    `4 — Delete Student\n` +
+    `\n0 — Back`
   );
 }
 
@@ -62,67 +80,107 @@ async function handleResponse(msg, client) {
   if (!session) return;
 
   const body = msg.body.trim();
+  const lower = body.toLowerCase();
   const { state, data: sd } = session;
 
+  // "menu" typed anywhere → restart main menu
+  if (lower === 'menu') { clearSession(chatId); return sendMainMenu(msg, client); }
+
   if (state === 'MAIN_MENU') {
-    clearSession(chatId);
-    if (body === '1') return sendStudentList(msg, 'SELECT_STUDENT');
-    if (body === '2') {
-      setSession(chatId, 'AWAITING_NEW_STUDENT');
-      return msg.reply('Enter the new student\'s name:');
-    }
-    if (body === '3') return sendHelp(msg);
-    return msg.reply('Please reply with 1, 2, or 3.');
+    if (body === '1') { clearSession(chatId); return sendStudentList(msg, 'SELECT_STUDENT'); }
+    if (body === '2') { clearSession(chatId); return sendActiveReminders(msg); }
+    if (body === '3') { clearSession(chatId); setSession(chatId, 'SETUP_NAME'); return msg.reply(`*➕ Add Student*\n\nEnter student name:\n\n_0 — Cancel_`); }
+    if (body === '4') { clearSession(chatId); return sendHelp(msg); }
+    return;
   }
 
   if (state === 'AWAITING_NEW_STUDENT') {
+    // ignore short/empty or bot-generated text
+    if (!body || body.length > 50) return;
     clearSession(chatId);
-    const name = body.trim();
-    if (!name) return msg.reply('Name cannot be empty.');
-    const ok = storage.addStudent(name);
-    return msg.reply(ok ? `✅ Student *${name}* added.` : `"${name}" already exists.`);
+    const ok = storage.addStudent(body);
+    return msg.reply(ok ? `✅ Student *${body}* added.` : `"${body}" already exists.`);
   }
 
   if (state === 'SELECT_STUDENT') {
+    if (body === '0') { clearSession(chatId); return sendMainMenu(msg, client); }
     const { names } = sd;
     const idx = parseInt(body) - 1;
-    if (isNaN(idx) || idx < 0 || idx >= names.length) {
-      return msg.reply(`Please reply with a number between 1 and ${names.length}.`);
-    }
-    const studentName = names[idx];
-    return sendStudentMenu(msg, studentName);
+    if (isNaN(idx) || idx < 0 || idx >= names.length) return; // ignore invalid
+    clearSession(chatId);
+    return sendStudentMenu(msg, names[idx]);
   }
 
   if (state === 'STUDENT_MENU') {
     const { studentName } = sd;
-    clearSession(chatId);
+    if (body === '1') { clearSession(chatId); return outputStatus(msg, studentName); }
+    if (body === '2') { clearSession(chatId); return outputHomework(msg, studentName); }
+    if (body === '3') { clearSession(chatId); return outputLesson(msg, studentName); }
+    if (body === '4') { clearSession(chatId); setSession(chatId, 'SET_HOMEWORK', { studentName }); return msg.reply(`Enter homework content for *${studentName}*:`); }
+    if (body === '5') { clearSession(chatId); setSession(chatId, 'SET_LESSON', { studentName }); return msg.reply(`Enter lesson plan for *${studentName}*:`); }
+    if (body === '6') { clearSession(chatId); setSession(chatId, 'SET_LESSON_DATE', { studentName }); return msg.reply(`Enter the next lesson date for *${studentName}*:\n_(e.g. 12 May, May 12, 2026-05-12)_`); }
+    if (body === '7') {
+      clearSession(chatId);
+      const data = storage.getData();
+      const key = storage.findStudentKey(data, studentName);
+      if (!key) return msg.reply('Student not found.');
+      data.students[key].homeworkReminder.active = false;
+      data.students[key].lessonReminder.active = false;
+      storage.saveData(data);
+      return msg.reply(`⏸ Reminders snoozed for *${key}*.\nThey'll restart automatically after the next lesson.`);
+    }
+    if (body === '8') { clearSession(chatId); return sendEditMenu(msg, studentName); }
+    if (body === '0') { clearSession(chatId); return sendStudentList(msg, 'SELECT_STUDENT'); }
+    return;
+  }
 
-    if (body === '1') return outputStatus(msg, studentName);
-    if (body === '2') return outputHomework(msg, studentName);
-    if (body === '3') return outputLesson(msg, studentName);
-    if (body === '4') {
-      setSession(chatId, 'SET_HOMEWORK', { studentName });
-      return msg.reply(`Enter homework content for *${studentName}*:`);
+  if (state === 'EDIT_MENU') {
+    const { studentName } = sd;
+    if (body === '0') { clearSession(chatId); return sendStudentMenu(msg, studentName); }
+    if (body === '1') { clearSession(chatId); setSession(chatId, 'RENAME_STUDENT', { studentName }); return msg.reply(`Enter new name for *${studentName}*:`); }
+    if (body === '2') { clearSession(chatId); setSession(chatId, 'SET_YEAR', { studentName }); return msg.reply(`Enter year for *${studentName}* (e.g. Y7, Y11):`); }
+    if (body === '3') { clearSession(chatId); setSession(chatId, 'SET_LESSON_DATE', { studentName }); return msg.reply(`Enter next lesson date for *${studentName}*:\n_(e.g. 12 May, May 12, 2026-05-12)_`); }
+    if (body === '4') { clearSession(chatId); setSession(chatId, 'CONFIRM_DELETE', { studentName }); return msg.reply(`Are you sure you want to delete *${studentName}*?\n\nType *yes* to confirm or *0* to cancel.`); }
+    return;
+  }
+
+  if (state === 'RENAME_STUDENT') {
+    if (body === '0') { clearSession(chatId); return sendEditMenu(msg, sd.studentName); }
+    if (!body || body.length > 50) return;
+    clearSession(chatId);
+    const result = storage.renameStudent(sd.studentName, body);
+    if (result === 'exists') return msg.reply(`"${body}" already exists.`);
+    if (result === 'not_found') return msg.reply(`Student not found.`);
+    return msg.reply(`✅ Renamed to *${body}*.`);
+  }
+
+  if (state === 'SET_YEAR') {
+    if (body === '0') { clearSession(chatId); return sendEditMenu(msg, sd.studentName); }
+    if (!body || body.length > 10) return;
+    clearSession(chatId);
+    const r = storage.getStudent(sd.studentName);
+    if (!r) return msg.reply('Student not found.');
+    r.student.year = body;
+    storage.saveStudent(r.key, r.student);
+    return msg.reply(`✅ Year set to *${body}* for *${r.key}*.`);
+  }
+
+  if (state === 'CONFIRM_DELETE') {
+    if (body.toLowerCase() === 'yes') {
+      clearSession(chatId);
+      const ok = storage.deleteStudent(sd.studentName);
+      return msg.reply(ok ? `✅ *${sd.studentName}* deleted.` : 'Student not found.');
     }
-    if (body === '5') {
-      setSession(chatId, 'SET_LESSON', { studentName });
-      return msg.reply(`Enter lesson plan for *${studentName}*:`);
-    }
-    if (body === '6') {
-      setSession(chatId, 'SET_LESSON_DATE', { studentName });
-      return msg.reply(`Enter the next lesson date for *${studentName}*:\n_(e.g. 12 May, May 12, 2026-05-12)_`);
-    }
-    return msg.reply('Please reply with a number between 1 and 6.');
+    if (body === '0') { clearSession(chatId); return sendEditMenu(msg, sd.studentName); }
+    return;
   }
 
   if (state === 'SET_LESSON_DATE') {
-    clearSession(chatId);
-    const { studentName } = sd;
+    if (body === '0') { clearSession(chatId); return sendStudentMenu(msg, sd.studentName); }
     const parsed = new Date(body);
-    if (isNaN(parsed.getTime())) {
-      return msg.reply(`Couldn't parse "${body}" as a date.\nTry: 12 May, May 12, 2026-05-12`);
-    }
-    const r = storage.getStudent(studentName);
+    if (isNaN(parsed.getTime())) return; // ignore unparseable (e.g. bot replies)
+    clearSession(chatId);
+    const r = storage.getStudent(sd.studentName);
     if (!r) return msg.reply('Student not found.');
     r.student.nextLesson = parsed.toISOString();
     storage.saveStudent(r.key, r.student);
@@ -130,6 +188,8 @@ async function handleResponse(msg, client) {
   }
 
   if (state === 'SET_HOMEWORK') {
+    if (body === '0') { clearSession(chatId); return sendStudentMenu(msg, sd.studentName); }
+    if (!body) return;
     clearSession(chatId);
     const r = storage.getStudent(sd.studentName);
     if (!r) return msg.reply('Student not found.');
@@ -139,6 +199,8 @@ async function handleResponse(msg, client) {
   }
 
   if (state === 'SET_LESSON') {
+    if (body === '0') { clearSession(chatId); return sendStudentMenu(msg, sd.studentName); }
+    if (!body) return;
     clearSession(chatId);
     const r = storage.getStudent(sd.studentName);
     if (!r) return msg.reply('Student not found.');
@@ -147,7 +209,73 @@ async function handleResponse(msg, client) {
     return msg.reply(`✅ Lesson plan saved for *${r.key}*:\n${body}`);
   }
 
-  clearSession(chatId);
+  // ── Setup wizard ─────────────────────────────────────────────────────────
+
+  if (state === 'SETUP_NAME') {
+    if (body === '0') { clearSession(chatId); return sendMainMenu(msg, client); }
+    if (!body || body.length > 50) return;
+    if (storage.getStudent(body)) { return msg.reply(`"${body}" already exists. Enter a different name:`); }
+    setSession(chatId, 'SETUP_YEAR', { name: body });
+    return msg.reply(`Year for *${body}*? (e.g. Y7, Y11)\n_Type n/a to skip — 0 to cancel_`);
+  }
+
+  if (state === 'SETUP_YEAR') {
+    if (body === '0') { clearSession(chatId); return sendMainMenu(msg, client); }
+    if (!body || body.length > 20) return;
+    const year = body.toLowerCase() === 'n/a' ? null : body;
+    setSession(chatId, 'SETUP_DATE', { ...sd, year });
+    return msg.reply(`Next lesson date for *${sd.name}*? (e.g. 12 May)\n_Type n/a to skip — 0 to cancel_`);
+  }
+
+  if (state === 'SETUP_DATE') {
+    if (body === '0') { clearSession(chatId); return sendMainMenu(msg, client); }
+    if (!body) return;
+    const isNA = body.toLowerCase() === 'n/a';
+    let nextLesson = null;
+    if (!isNA) {
+      const parsed = new Date(body);
+      if (isNaN(parsed.getTime())) return msg.reply(`Couldn't parse that date. Try: *12 May* or type *n/a* to skip.`);
+      nextLesson = parsed.toISOString();
+    }
+    clearSession(chatId);
+    storage.addStudent(sd.name);
+    const r = storage.getStudent(sd.name);
+    if (sd.year) r.student.year = sd.year;
+    if (nextLesson) r.student.nextLesson = nextLesson;
+    storage.saveStudent(r.key, r.student);
+    return msg.reply(
+      `✅ *${r.key}* added!\n` +
+      `Year: ${sd.year || 'not set'}\n` +
+      `Next lesson: ${nextLesson ? new Date(nextLesson).toDateString() : 'not set'}\n\n` +
+      `_Add topics and content from the student menu._`
+    );
+  }
+
+}
+
+// ─── Active reminders view ───────────────────────────────────────────────────
+
+async function sendActiveReminders(msg) {
+  const data = storage.getData();
+  const lines = [];
+
+  for (const [name, student] of Object.entries(data.students)) {
+    const hw = student.homeworkReminder?.active;
+    const ls = student.lessonReminder?.active;
+    if (!hw && !ls) continue;
+
+    const nextLesson = student.lessonReminder?.nextLesson
+      ? new Date(student.lessonReminder.nextLesson).toDateString()
+      : 'not set';
+
+    let entry = `*${name}* · ${student.year || '?'}\n`;
+    if (hw) entry += `  📚 Homework reminder active\n`;
+    if (ls) entry += `  📋 Lesson plan reminder active · next lesson ${nextLesson}\n`;
+    lines.push(entry.trim());
+  }
+
+  if (lines.length === 0) return msg.reply('🔕 No active reminders.');
+  return msg.reply(`*🔔 Active Reminders*\n\n${lines.join('\n\n')}`);
 }
 
 // ─── Output helpers (also called directly by commands.js) ────────────────────
@@ -164,7 +292,8 @@ async function outputStatus(msg, studentName) {
   const mid  = entries.filter(([, v]) => v === 2);
   const weak = entries.filter(([, v]) => v === 1);
 
-  let out = `📊 *Status: ${key}*`;
+  const year = student.year ? ` · ${student.year}` : '';
+  let out = `📊 *Status: ${key}*${year}`;
   if (good.length) out += `\n\n✅ *Strong (3/3)*\n${good.map(([t]) => `• ${t}`).join('\n')}`;
   if (mid.length)  out += `\n\n🔄 *Progressing (2/3)*\n${mid.map(([t]) => `• ${t}`).join('\n')}`;
   if (weak.length) out += `\n\n⚠️ *Needs Work (1/3)*\n${weak.map(([t]) => `• ${t}`).join('\n')}`;

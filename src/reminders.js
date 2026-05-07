@@ -5,7 +5,7 @@ let botClient = null;
 
 function init(client) {
   botClient = client;
-  cron.schedule('*/30 * * * *', checkReminders);
+  cron.schedule('0 10 * * *', checkReminders);
 }
 
 async function checkReminders() {
@@ -20,10 +20,12 @@ async function checkReminders() {
     if (student.nextLesson && !student.homeworkReminder.active && !student.lessonReminder.active) {
       const lessonTime = new Date(student.nextLesson).getTime();
       if (now >= lessonTime) {
-        // Lesson has passed — start reminders and clear the date so it doesn't re-trigger
+        // Lesson has passed — start reminders and roll date forward by 7 days
         student.homeworkReminder = { active: true, lastSent: null };
         student.lessonReminder = { active: true, lastSent: null, nextLesson: student.nextLesson };
-        student.nextLesson = null;
+        const nextWeek = new Date(student.nextLesson);
+        nextWeek.setDate(nextWeek.getDate() + 7);
+        student.nextLesson = nextWeek.toISOString();
         changed = true;
         await botClient.sendMessage(data.tutorChatId,
           `📅 Lesson with *${name}* has ended.\nReminders started:\n• Homework: every 24 hours\n• Lesson plan: every 48 hours`
