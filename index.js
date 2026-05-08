@@ -5,6 +5,7 @@ const reminders = require('./src/reminders');
 
 const client = new Client({
   authStrategy: new LocalAuth(),
+  authTimeoutMs: 120000,
   puppeteer: {
     headless: true,
     executablePath: '/usr/bin/chromium',
@@ -15,6 +16,10 @@ const client = new Client({
       '--disable-gpu'
     ]
   }
+});
+
+process.on('unhandledRejection', err => {
+  console.error('Unhandled error:', err?.message || err);
 });
 
 client.on('qr', qr => {
