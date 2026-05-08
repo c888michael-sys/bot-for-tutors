@@ -7,7 +7,7 @@ const client = new Client({
   authStrategy: new LocalAuth(),
   authTimeoutMs: 120000,
   puppeteer: {
-    headless: true,
+    headless: 'new',
     executablePath: '/usr/bin/chromium',
     args: [
       '--no-sandbox',
