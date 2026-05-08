@@ -28,7 +28,7 @@ async function checkReminders() {
         student.nextLesson = nextWeek.toISOString();
         changed = true;
         await botClient.sendMessage(data.tutorChatId,
-          `📅 Lesson with *${name}* has ended.\nReminders started:\n• Homework: every 24 hours\n• Lesson plan: every 48 hours`
+          { text: `📅 Lesson with *${name}* has ended.\nReminders started:\n• Homework: every 24 hours\n• Lesson plan: every 48 hours` }
         );
       }
     }
@@ -39,7 +39,7 @@ async function checkReminders() {
         : 0;
       if (now - last >= 24 * 60 * 60 * 1000) {
         await botClient.sendMessage(data.tutorChatId,
-          `📚 *Homework Reminder*\nPlease create homework for *${name}*.\n\nReply: _homework ${name} done_ when ready.`
+          { text: `📚 *Homework Reminder*\nPlease create homework for *${name}*.\n\nReply: _homework ${name} done_ when ready.` }
         );
         student.homeworkReminder.lastSent = new Date().toISOString();
         changed = true;
@@ -55,7 +55,7 @@ async function checkReminders() {
           ? new Date(student.lessonReminder.nextLesson).toDateString()
           : 'soon';
         await botClient.sendMessage(data.tutorChatId,
-          `📋 *Lesson Plan Reminder*\nPlease prepare a lesson plan for *${name}*.\n📅 Next lesson: *${nextLessonDisplay}*\n\nReply: _lesson ${name} done_ when ready.`
+          { text: `📋 *Lesson Plan Reminder*\nPlease prepare a lesson plan for *${name}*.\n📅 Next lesson: *${nextLessonDisplay}*\n\nReply: _lesson ${name} done_ when ready.` }
         );
         student.lessonReminder.lastSent = new Date().toISOString();
         changed = true;

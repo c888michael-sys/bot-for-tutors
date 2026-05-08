@@ -1,57 +1,82 @@
-const { Client, LocalAuth } = require('whatsapp-web.js');
+const { default: makeWASocket, DisconnectReason, useMultiFileAuthState, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const qrcode = require('qrcode-terminal');
+const pino = require('pino');
 const commands = require('./src/commands');
 const reminders = require('./src/reminders');
+const storage = require('./src/save');
 
-const client = new Client({
-  authStrategy: new LocalAuth(),
-  authTimeoutMs: 120000,
-  puppeteer: {
-    headless: 'new',
-    executablePath: '/usr/bin/chromium',
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-gpu',
-      '--disable-software-rasterizer',
-      '--disable-extensions',
-      '--no-first-run',
-      '--disable-accelerated-2d-canvas'
-    ]
-  }
-});
+async function startBot() {
+  const { state, saveCreds } = await useMultiFileAuthState('.baileys_auth');
+  const { version } = await fetchLatestBaileysVersion();
 
-process.on('unhandledRejection', err => {
-  console.error('Unhandled error:', err?.message || err);
-});
+  const sock = makeWASocket({
+    version,
+    auth: state,
+    printQRInTerminal: false,
+    browser: ['Tutor Bot', 'Chrome', '1.0'],
+    logger: pino({ level: 'silent' })
+  });
 
-client.on('qr', qr => {
-  console.log('\nScan this QR code with WhatsApp:\n');
-  qrcode.generate(qr, { small: true });
-  console.log('\nWaiting for scan...\n');
-});
+  sock.ev.on('creds.update', saveCreds);
 
-client.on('authenticated', () => console.log('Authenticated.'));
+  sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
+    if (qr) {
+      console.log('\nScan this QR code with WhatsApp:\n');
+      qrcode.generate(qr, { small: true });
+    }
 
-client.on('ready', () => {
-  console.log('Tutor bot ready. Send "menu" from WhatsApp to get started.\n');
-  reminders.init(client);
-});
+    if (connection === 'open') {
+      console.log('Tutor bot ready. Send "menu" to get started.\n');
+      // Save tutor JID for reminders
+      const jid = sock.user?.id?.replace(':0@', '@') || sock.user?.id;
+      if (jid) storage.setTutorChatId(jid);
+      reminders.init(sock);
+    }
 
-client.on('auth_failure', err => console.error('Auth failed:', err));
-client.on('disconnected', reason => console.log('Disconnected:', reason));
+    if (connection === 'close') {
+      const code = lastDisconnect?.error?.output?.statusCode;
+      if (code === DisconnectReason.loggedOut) {
+        console.log('Logged out. Delete .baileys_auth folder and restart.');
+      } else {
+        console.log('Reconnecting...');
+        startBot();
+      }
+    }
+  });
 
-// message_create fires for messages YOU send (needed for self-chat commands)
-// msg.fromMe=true means you typed it; bot replies are also fromMe but won't match any command
-client.on('message_create', async msg => {
-  if (!msg.fromMe) return;
-  if (msg.from.endsWith('@g.us')) return;
-  try {
-    await commands.handle(msg, client);
-  } catch (err) {
-    console.error('Error handling message:', err);
-  }
-});
+  sock.ev.on('messages.upsert', async ({ messages, type }) => {
+    if (type !== 'notify') return;
+    for (const raw of messages) {
+      if (!raw.key.fromMe) continue;
+      if (raw.key.remoteJid?.endsWith('@g.us')) continue;
+      const msg = wrapMessage(sock, raw);
+      try {
+        await commands.handle(msg, sock);
+      } catch (err) {
+        console.error('Error handling message:', err);
+      }
+    }
+  });
+}
 
-client.initialize();
+function wrapMessage(sock, raw) {
+  const jid = raw.key.remoteJid;
+  const body = raw.message?.conversation ||
+               raw.message?.extendedTextMessage?.text ||
+               raw.message?.buttonsResponseMessage?.selectedButtonId ||
+               raw.message?.listResponseMessage?.title || '';
+
+  return {
+    body,
+    from: jid,
+    fromMe: raw.key.fromMe,
+    type: raw.message?.buttonsResponseMessage ? 'buttons_response'
+        : raw.message?.listResponseMessage    ? 'list_response'
+        : 'chat',
+    reply: async (text) => {
+      await sock.sendMessage(jid, { text: String(text) }, { quoted: raw });
+    }
+  };
+}
+
+startBot();
