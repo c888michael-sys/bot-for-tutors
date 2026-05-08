@@ -17,10 +17,7 @@ const client = new Client({
       '--disable-software-rasterizer',
       '--disable-extensions',
       '--no-first-run',
-      '--no-zygote',
-      '--single-process',
-      '--disable-accelerated-2d-canvas',
-      '--disable-web-security'
+      '--disable-accelerated-2d-canvas'
     ]
   }
 });
