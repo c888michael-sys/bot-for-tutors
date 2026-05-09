@@ -26,15 +26,32 @@ async function checkAutoTrigger() {
   const data = storage.getData();
   if (!data.tutorChatId || !botClient) return;
 
-  const now = Date.now();
+  const today = sydneyDate(new Date());
+  const currentMins = sydneyMinutes();
   let changed = false;
 
   for (const [name, student] of Object.entries(data.students)) {
     if (!student.nextLesson) continue;
     if (student.homeworkReminder.active || student.lessonReminder.active) continue;
 
-    const lessonTime = new Date(student.nextLesson).getTime();
-    if (now >= lessonTime) {
+    const lessonDay = sydneyDate(new Date(student.nextLesson));
+
+    let shouldTrigger = false;
+    if (lessonDay < today) {
+      // Lesson day fully passed
+      shouldTrigger = true;
+    } else if (lessonDay === today) {
+      if (student.lessonTime) {
+        // Trigger only after lesson has ended
+        const [lh, lm] = student.lessonTime.split(':').map(Number);
+        const lessonEndMins = lh * 60 + lm + (student.lessonDuration || 60);
+        if (currentMins >= lessonEndMins) shouldTrigger = true;
+      } else {
+        shouldTrigger = true; // no time set, trigger on the day
+      }
+    }
+
+    if (shouldTrigger) {
       student.homeworkReminder = { active: true, lastSent: null };
       student.lessonReminder = { active: true, lastSent: null, nextLesson: student.nextLesson };
       const nextWeek = new Date(student.nextLesson);

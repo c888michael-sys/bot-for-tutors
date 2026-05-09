@@ -433,8 +433,8 @@ async function sendActiveReminders(msg) {
     const ls = student.lessonReminder?.active;
     if (!hw && !ls) continue;
 
-    const nextLesson = student.lessonReminder?.nextLesson
-      ? new Date(student.lessonReminder.nextLesson).toDateString()
+    const nextLesson = student.nextLesson
+      ? new Date(student.nextLesson).toDateString()
       : 'not set';
 
     let entry = `*${name}* · ${student.year || '?'}\n`;
