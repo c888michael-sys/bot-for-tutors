@@ -1,6 +1,8 @@
 const storage = require('./save');
 const { parseDate, parseTime, formatTime } = require('./utils');
 
+const sessions = new Map();
+
 function hasSession(chatId) { return sessions.has(chatId); }
 function setSession(chatId, state, data = {}) { sessions.set(chatId, { state, data }); }
 function clearSession(chatId) { sessions.delete(chatId); }
