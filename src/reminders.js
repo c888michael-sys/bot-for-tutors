@@ -1,6 +1,6 @@
 const cron = require('node-cron');
 const storage = require('./save');
-const { sydneyDate, sydneyMinutes, formatTime } = require('./utils');
+const { sydneyDate, sydneyMinutes, formatTime, nextOccurrence } = require('./utils');
 
 let botClient = null;
 
@@ -54,9 +54,12 @@ async function checkAutoTrigger() {
     if (shouldTrigger) {
       student.homeworkReminder = { active: true, lastSent: null };
       student.lessonReminder = { active: true, lastSent: null, nextLesson: student.nextLesson };
-      const nextWeek = new Date(student.nextLesson);
-      nextWeek.setDate(nextWeek.getDate() + 7);
-      student.nextLesson = nextWeek.toISOString();
+      // Roll to next occurrence of recurring day, or +7 days if no day set
+      student.nextLesson = nextOccurrence(student.lessonDay) || (() => {
+        const d = new Date(student.nextLesson);
+        d.setDate(d.getDate() + 7);
+        return d.toISOString();
+      })();
       student.preReminderSent = false;
       student.postReminderSent = false;
       changed = true;

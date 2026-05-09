@@ -55,4 +55,23 @@ function sydneyMinutes() {
   return h * 60 + m;
 }
 
-module.exports = { parseDate, parseTime, formatTime, sydneyDate, sydneyMinutes };
+// Returns ISO string for the next occurrence of lessonDay (e.g. "Monday") after today (Sydney)
+// Always returns next week's occurrence if today is the same day
+function nextOccurrence(lessonDay) {
+  if (!lessonDay) return null;
+  const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const targetIdx = days.findIndex(d => d.toLowerCase() === lessonDay.toLowerCase());
+  if (targetIdx === -1) return null;
+
+  const str = sydneyDate(new Date());
+  const [year, month, day] = str.split('-').map(Number);
+  const todaySydney = new Date(year, month - 1, day); // midnight UTC, but getDay() uses the date components
+  const currentIdx = todaySydney.getDay();
+
+  let daysAhead = targetIdx - currentIdx;
+  if (daysAhead <= 0) daysAhead += 7; // always next week, never today
+
+  return new Date(year, month - 1, day + daysAhead).toISOString();
+}
+
+module.exports = { parseDate, parseTime, formatTime, sydneyDate, sydneyMinutes, nextOccurrence };
