@@ -48,8 +48,8 @@ async function sendStudentMenu(msg, studentName) {
     `1 — View Status\n` +
     `2 — View Homework Topics\n` +
     `3 — View Lesson Topics\n` +
-    `4 — Set Homework Content\n` +
-    `5 — Set Lesson Plan Content\n` +
+    `4 — Add Topic\n` +
+    `5 — Update Topic Rating\n` +
     `6 — Set Next Lesson Date\n` +
     `7 — Snooze Reminders\n` +
     `8 — Edit Student Info\n` +
@@ -63,9 +63,10 @@ async function sendEditMenu(msg, studentName) {
   const year = r?.student?.year || 'not set';
   setSession(chatId, 'EDIT_MENU', { studentName });
   const lessonTime = r?.student?.lessonTime ? formatTime(r.student.lessonTime) : 'not set';
+  const lessonDay = r?.student?.lessonDay || 'not set';
   const duration = r?.student?.lessonDuration || 60;
   return msg.reply(
-    `*✏️ Edit: ${studentName}* · ${year}\n⏰ ${lessonTime} · ${duration} min\n\n` +
+    `*✏️ Edit: ${studentName}* · ${year}\n📅 ${lessonDay} · ${lessonTime} · ${duration} min\n\n` +
     `1 — Rename Student\n` +
     `2 — Change Year\n` +
     `3 — Change Recurring Lesson Time\n` +
@@ -120,8 +121,17 @@ async function handleResponse(msg, client) {
     if (body === '1') { clearSession(chatId); return outputStatus(msg, studentName); }
     if (body === '2') { clearSession(chatId); return outputHomework(msg, studentName); }
     if (body === '3') { clearSession(chatId); return outputLesson(msg, studentName); }
-    if (body === '4') { clearSession(chatId); setSession(chatId, 'SET_HOMEWORK', { studentName }); return msg.reply(`Enter homework content for *${studentName}*:`); }
-    if (body === '5') { clearSession(chatId); setSession(chatId, 'SET_LESSON', { studentName }); return msg.reply(`Enter lesson plan for *${studentName}*:`); }
+    if (body === '4') { clearSession(chatId); setSession(chatId, 'ADD_TOPIC_NAME', { studentName }); return msg.reply(`Enter topic name for *${studentName}*:\n\n0 — Back`); }
+    if (body === '5') {
+      clearSession(chatId);
+      const r = storage.getStudent(studentName);
+      if (!r) return msg.reply('Student not found.');
+      const topics = Object.entries(r.student.status);
+      if (topics.length === 0) return msg.reply(`*${studentName}* has no topics yet. Use option 4 to add one.`);
+      const list = topics.map(([t, v], i) => `${i + 1} — ${t} (${v}/3)`).join('\n');
+      setSession(chatId, 'UPDATE_TOPIC_SELECT', { studentName, topics });
+      return msg.reply(`*Update Topic: ${studentName}*\n\n${list}\n\n0 — Back`);
+    }
     if (body === '6') { clearSession(chatId); setSession(chatId, 'SET_LESSON_DATE', { studentName }); return msg.reply(`Enter the next lesson date for *${studentName}*:\n_(e.g. 12 May, May 12, 2026-05-12)_`); }
     if (body === '7') {
       clearSession(chatId);
@@ -143,7 +153,7 @@ async function handleResponse(msg, client) {
     if (body === '0') { clearSession(chatId); return sendStudentMenu(msg, studentName); }
     if (body === '1') { clearSession(chatId); setSession(chatId, 'RENAME_STUDENT', { studentName }); return msg.reply(`Enter new name for *${studentName}*:`); }
     if (body === '2') { clearSession(chatId); setSession(chatId, 'SET_YEAR', { studentName }); return msg.reply(`Enter year for *${studentName}* (e.g. Y7, Y11):`); }
-    if (body === '3') { clearSession(chatId); setSession(chatId, 'SET_RECURRING_TIME', { studentName }); return msg.reply(`Enter recurring lesson time for *${studentName}*:\n_(e.g. 3pm, 15:00)_\n\n0 — Back`); }
+    if (body === '3') { clearSession(chatId); setSession(chatId, 'SET_RECURRING_DAY', { studentName }); return msg.reply(`Enter lesson day for *${studentName}*:\n_(e.g. Monday, Sunday)_\n\n0 — Back`); }
     if (body === '4') { clearSession(chatId); setSession(chatId, 'SET_DURATION', { studentName }); return msg.reply(`Enter lesson duration for *${studentName}* in minutes:\n_(e.g. 60, 90, 120)_\n\n0 — Back`); }
     if (body === '5') {
       clearSession(chatId);
@@ -169,6 +179,16 @@ async function handleResponse(msg, client) {
     return msg.reply(`✅ Lesson duration set to *${duration} min* for *${r.key}*.`);
   }
 
+  if (state === 'SET_RECURRING_DAY') {
+    if (body === '0') { clearSession(chatId); return sendEditMenu(msg, sd.studentName); }
+    const days = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
+    const day = body.trim().toLowerCase();
+    if (!days.includes(day)) return msg.reply(`Please enter a valid day (e.g. *Monday*, *Sunday*):`);
+    const formatted = body.trim().charAt(0).toUpperCase() + body.trim().slice(1).toLowerCase();
+    setSession(chatId, 'SET_RECURRING_TIME', { ...sd, lessonDay: formatted });
+    return msg.reply(`Enter lesson time for *${sd.studentName}*:\n_(e.g. 3pm, 15:00)_\n\n0 — Back`);
+  }
+
   if (state === 'SET_RECURRING_TIME') {
     if (body === '0') { clearSession(chatId); return sendEditMenu(msg, sd.studentName); }
     const time = parseTime(body);
@@ -176,9 +196,10 @@ async function handleResponse(msg, client) {
     clearSession(chatId);
     const r = storage.getStudent(sd.studentName);
     if (!r) return msg.reply('Student not found.');
+    r.student.lessonDay = sd.lessonDay;
     r.student.lessonTime = time;
     storage.saveStudent(r.key, r.student);
-    return msg.reply(`✅ Recurring lesson time set to *${formatTime(time)}* for *${r.key}*.`);
+    return msg.reply(`✅ Recurring lesson set to *${sd.lessonDay}s* at *${formatTime(time)}* for *${r.key}*.`);
   }
 
   if (state === 'OVERRIDE_DATE') {
@@ -255,6 +276,48 @@ async function handleResponse(msg, client) {
     return msg.reply(`✅ Next lesson for *${r.key}* set to: ${parsed.toDateString()}`);
   }
 
+  if (state === 'ADD_TOPIC_NAME') {
+    if (body === '0') { clearSession(chatId); return sendStudentMenu(msg, sd.studentName); }
+    if (!body || body.length > 100) return;
+    setSession(chatId, 'ADD_TOPIC_RATING', { ...sd, topic: body });
+    return msg.reply(`Rating for *${body}*:\n\n1 — Poor / Not learnt\n2 — Getting there\n3 — Good\n\n0 — Back`);
+  }
+
+  if (state === 'ADD_TOPIC_RATING') {
+    if (body === '0') { clearSession(chatId); return sendStudentMenu(msg, sd.studentName); }
+    const rating = parseInt(body);
+    if (isNaN(rating) || rating < 1 || rating > 3) return;
+    clearSession(chatId);
+    const r = storage.getStudent(sd.studentName);
+    if (!r) return msg.reply('Student not found.');
+    const label = rating === 1 ? 'Poor/Not learnt' : rating === 2 ? 'Getting there' : 'Good';
+    r.student.status[sd.topic] = rating;
+    storage.saveStudent(r.key, r.student);
+    return msg.reply(`✅ Added *${sd.topic}* (${rating}/3 — ${label}) for *${r.key}*.`);
+  }
+
+  if (state === 'UPDATE_TOPIC_SELECT') {
+    if (body === '0') { clearSession(chatId); return sendStudentMenu(msg, sd.studentName); }
+    const idx = parseInt(body) - 1;
+    if (isNaN(idx) || idx < 0 || idx >= sd.topics.length) return;
+    const [topicName, currentRating] = sd.topics[idx];
+    setSession(chatId, 'UPDATE_TOPIC_RATING', { ...sd, topicName });
+    return msg.reply(`*${topicName}* — currently ${currentRating}/3\n\nNew rating:\n1 — Poor / Not learnt\n2 — Getting there\n3 — Good\n\n0 — Back`);
+  }
+
+  if (state === 'UPDATE_TOPIC_RATING') {
+    if (body === '0') { clearSession(chatId); return sendStudentMenu(msg, sd.studentName); }
+    const rating = parseInt(body);
+    if (isNaN(rating) || rating < 1 || rating > 3) return;
+    clearSession(chatId);
+    const r = storage.getStudent(sd.studentName);
+    if (!r) return msg.reply('Student not found.');
+    const label = rating === 1 ? 'Poor/Not learnt' : rating === 2 ? 'Getting there' : 'Good';
+    r.student.status[sd.topicName] = rating;
+    storage.saveStudent(r.key, r.student);
+    return msg.reply(`✅ Updated *${sd.topicName}* to ${rating}/3 (${label}) for *${r.key}*.`);
+  }
+
   if (state === 'SET_HOMEWORK') {
     if (body === '0') { clearSession(chatId); return sendStudentMenu(msg, sd.studentName); }
     if (!body) return;
@@ -291,7 +354,18 @@ async function handleResponse(msg, client) {
     if (body === '0') { clearSession(chatId); return sendMainMenu(msg, client); }
     if (!body || body.length > 20) return;
     const year = body.toLowerCase() === 'n/a' ? null : body;
-    setSession(chatId, 'SETUP_DATE', { ...sd, year });
+    setSession(chatId, 'SETUP_DAY', { ...sd, year });
+    return msg.reply(`What day do lessons occur for *${sd.name}*? (e.g. Monday, Sunday)\n_Type n/a to skip — 0 to cancel_`);
+  }
+
+  if (state === 'SETUP_DAY') {
+    if (body === '0') { clearSession(chatId); return sendMainMenu(msg, client); }
+    if (!body) return;
+    const days = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
+    const isNA = body.toLowerCase() === 'n/a';
+    if (!isNA && !days.includes(body.trim().toLowerCase())) return msg.reply(`Please enter a valid day (e.g. *Monday*) or *n/a* to skip.`);
+    const lessonDay = isNA ? null : body.trim().charAt(0).toUpperCase() + body.trim().slice(1).toLowerCase();
+    setSession(chatId, 'SETUP_DATE', { ...sd, lessonDay });
     return msg.reply(`Next lesson date for *${sd.name}*? (e.g. 12 May)\n_Type n/a to skip — 0 to cancel_`);
   }
 
@@ -330,6 +404,7 @@ async function handleResponse(msg, client) {
     storage.addStudent(sd.name);
     const r = storage.getStudent(sd.name);
     if (sd.year) r.student.year = sd.year;
+    if (sd.lessonDay) r.student.lessonDay = sd.lessonDay;
     if (sd.nextLesson) r.student.nextLesson = sd.nextLesson;
     if (sd.lessonTime) r.student.lessonTime = sd.lessonTime;
     r.student.lessonDuration = duration;
@@ -337,6 +412,7 @@ async function handleResponse(msg, client) {
     return msg.reply(
       `✅ *${r.key}* added!\n` +
       `Year: ${sd.year || 'not set'}\n` +
+      `Lesson day: ${sd.lessonDay || 'not set'}\n` +
       `Next lesson: ${sd.nextLesson ? new Date(sd.nextLesson).toDateString() : 'not set'}` +
       `${sd.lessonTime ? ` at ${formatTime(sd.lessonTime)}` : ''}\n` +
       `Duration: ${duration} min\n\n` +

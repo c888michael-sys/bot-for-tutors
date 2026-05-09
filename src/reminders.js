@@ -7,27 +7,22 @@ let botClient = null;
 function init(client) {
   botClient = client;
 
-  // Homework & lesson plan reminders — 10am Sydney daily
-  cron.schedule('0 10 * * *', checkHomeworkReminders, { timezone: 'Australia/Sydney' });
+  // Auto-trigger: check every 30 min if any lesson has passed
+  cron.schedule('*/30 * * * *', checkAutoTrigger);
 
-  // Pre/post lesson reminders — every minute Sydney time
+  // Homework & lesson plan reminder messages — 10am Sydney daily
+  cron.schedule('0 10 * * *', sendDailyReminders, { timezone: 'Australia/Sydney' });
+
+  // Pre/post lesson timing reminders — every minute
   cron.schedule('* * * * *', checkLessonTimingReminders, { timezone: 'Australia/Sydney' });
 
-  // ── Temporary test reminder — fires once at 1:20pm Sydney May 9, auto-removes ──
-  const testJob = cron.schedule('20 13 9 5 *', async () => {
-    const data = storage.getData();
-    if (!botClient || !data.tutorChatId) return;
-    await botClient.sendMessage(data.tutorChatId, {
-      text: '🧪 *Test Reminder* — the reminder system is working correctly!'
-    });
-    testJob.stop();
-    console.log('Test reminder sent and removed.');
-  }, { timezone: 'Australia/Sydney' });
+  // Run auto-trigger on startup in case lessons passed while bot was down
+  setTimeout(checkAutoTrigger, 3000);
 }
 
-// ── Homework & lesson plan reminders ─────────────────────────────────────────
+// ── Auto-trigger: start reminders when lesson date passes ─────────────────────
 
-async function checkHomeworkReminders() {
+async function checkAutoTrigger() {
   const data = storage.getData();
   if (!data.tutorChatId || !botClient) return;
 
@@ -35,24 +30,38 @@ async function checkHomeworkReminders() {
   let changed = false;
 
   for (const [name, student] of Object.entries(data.students)) {
-    // Auto-start reminders when lesson date has passed
-    if (student.nextLesson && !student.homeworkReminder.active && !student.lessonReminder.active) {
-      const lessonTime = new Date(student.nextLesson).getTime();
-      if (now >= lessonTime) {
-        student.homeworkReminder = { active: true, lastSent: null };
-        student.lessonReminder = { active: true, lastSent: null, nextLesson: student.nextLesson };
-        const nextWeek = new Date(student.nextLesson);
-        nextWeek.setDate(nextWeek.getDate() + 7);
-        student.nextLesson = nextWeek.toISOString();
-        student.preReminderSent = false;
-        student.postReminderSent = false;
-        changed = true;
-        await botClient.sendMessage(data.tutorChatId, {
-          text: `📅 Lesson with *${name}* has ended.\nReminders started:\n• Homework: every 24 hours\n• Lesson plan: every 48 hours`
-        });
-      }
-    }
+    if (!student.nextLesson) continue;
+    if (student.homeworkReminder.active || student.lessonReminder.active) continue;
 
+    const lessonTime = new Date(student.nextLesson).getTime();
+    if (now >= lessonTime) {
+      student.homeworkReminder = { active: true, lastSent: null };
+      student.lessonReminder = { active: true, lastSent: null, nextLesson: student.nextLesson };
+      const nextWeek = new Date(student.nextLesson);
+      nextWeek.setDate(nextWeek.getDate() + 7);
+      student.nextLesson = nextWeek.toISOString();
+      student.preReminderSent = false;
+      student.postReminderSent = false;
+      changed = true;
+      await botClient.sendMessage(data.tutorChatId, {
+        text: `📅 Lesson with *${name}* has ended. Reminders started — you'll be reminded at 10am.`
+      });
+    }
+  }
+
+  if (changed) storage.saveData(data);
+}
+
+// ── Daily reminder messages at 10am Sydney ────────────────────────────────────
+
+async function sendDailyReminders() {
+  const data = storage.getData();
+  if (!data.tutorChatId || !botClient) return;
+
+  const now = Date.now();
+  let changed = false;
+
+  for (const [name, student] of Object.entries(data.students)) {
     if (student.homeworkReminder.active) {
       const last = student.homeworkReminder.lastSent ? new Date(student.homeworkReminder.lastSent).getTime() : 0;
       if (now - last >= 24 * 60 * 60 * 1000) {
@@ -100,7 +109,6 @@ async function checkLessonTimingReminders() {
     const [lh, lm] = student.lessonTime.split(':').map(Number);
     const lessonMins = lh * 60 + lm;
 
-    // 1 hour before lesson
     if (!student.preReminderSent && currentMins === lessonMins - 60) {
       await botClient.sendMessage(data.tutorChatId, {
         text: `⏰ *Upcoming Lesson*\nLesson with *${name}* starts in 1 hour at ${formatTime(student.lessonTime)}.`
@@ -109,7 +117,6 @@ async function checkLessonTimingReminders() {
       changed = true;
     }
 
-    // 10 minutes after lesson ends
     const duration = student.lessonDuration || 60;
     if (!student.postReminderSent && currentMins === lessonMins + duration + 10) {
       await botClient.sendMessage(data.tutorChatId, {
@@ -143,4 +150,4 @@ function stopLessonReminder(studentName) {
   return key;
 }
 
-module.exports = { init, checkHomeworkReminders, stopHomeworkReminder, stopLessonReminder };
+module.exports = { init, checkAutoTrigger, stopHomeworkReminder, stopLessonReminder };

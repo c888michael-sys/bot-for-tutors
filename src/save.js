@@ -41,6 +41,7 @@ function addStudent(name) {
   if (findStudentKey(data, name)) return false;
   data.students[name] = {
     year: null,
+    lessonDay: null,
     lessonTime: null,
     lessonDuration: 60,
     status: {},
