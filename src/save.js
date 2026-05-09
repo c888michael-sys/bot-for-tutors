@@ -41,10 +41,13 @@ function addStudent(name) {
   if (findStudentKey(data, name)) return false;
   data.students[name] = {
     year: null,
+    lessonTime: null,
     status: {},
     homework: '',
     lesson: '',
     nextLesson: null,
+    preReminderSent: false,
+    postReminderSent: false,
     homeworkReminder: { active: false, lastSent: null },
     lessonReminder: { active: false, lastSent: null, nextLesson: null }
   };

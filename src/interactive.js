@@ -1,13 +1,5 @@
 const storage = require('./save');
-
-const sessions = new Map();
-
-function parseDate(input) {
-  if (!input) return null;
-  const withYear = /\d{4}/.test(input) ? input : `${input} ${new Date().getFullYear()}`;
-  const d = new Date(withYear);
-  return isNaN(d.getTime()) ? null : d;
-}
+const { parseDate, parseTime, formatTime } = require('./utils');
 
 function hasSession(chatId) { return sessions.has(chatId); }
 function setSession(chatId, state, data = {}) { sessions.set(chatId, { state, data }); }
@@ -45,13 +37,12 @@ async function sendStudentList(msg, nextState) {
 async function sendStudentMenu(msg, studentName) {
   const chatId = msg.from;
   const r = storage.getStudent(studentName);
-  const nextLesson = r?.student?.nextLesson
-    ? new Date(r.student.nextLesson).toDateString()
-    : 'not set';
+  const lessonDate = r?.student?.nextLesson ? new Date(r.student.nextLesson).toDateString() : 'not set';
+  const lessonTime = r?.student?.lessonTime ? formatTime(r.student.lessonTime) : 'not set';
   const year = r?.student?.year || 'not set';
   setSession(chatId, 'STUDENT_MENU', { studentName });
   return msg.reply(
-    `*${studentName}* · ${year}\n📅 Next Lesson: ${nextLesson}\n\n` +
+    `*${studentName}* · ${year}\n📅 Next Lesson: ${lessonDate} at ${lessonTime}\n\n` +
     `1 — View Status\n` +
     `2 — View Homework Topics\n` +
     `3 — View Lesson Topics\n` +
@@ -69,12 +60,14 @@ async function sendEditMenu(msg, studentName) {
   const r = storage.getStudent(studentName);
   const year = r?.student?.year || 'not set';
   setSession(chatId, 'EDIT_MENU', { studentName });
+  const lessonTime = r?.student?.lessonTime ? formatTime(r.student.lessonTime) : 'not set';
   return msg.reply(
-    `*✏️ Edit: ${studentName}* · ${year}\n\n` +
+    `*✏️ Edit: ${studentName}* · ${year}\n⏰ Recurring lesson time: ${lessonTime}\n\n` +
     `1 — Rename Student\n` +
     `2 — Change Year\n` +
-    `3 — Change Next Lesson Date\n` +
-    `4 — Delete Student\n` +
+    `3 — Change Recurring Lesson Time\n` +
+    `4 — Override This Week's Date / Time\n` +
+    `5 — Delete Student\n` +
     `\n0 — Back`
   );
 }
@@ -146,9 +139,60 @@ async function handleResponse(msg, client) {
     if (body === '0') { clearSession(chatId); return sendStudentMenu(msg, studentName); }
     if (body === '1') { clearSession(chatId); setSession(chatId, 'RENAME_STUDENT', { studentName }); return msg.reply(`Enter new name for *${studentName}*:`); }
     if (body === '2') { clearSession(chatId); setSession(chatId, 'SET_YEAR', { studentName }); return msg.reply(`Enter year for *${studentName}* (e.g. Y7, Y11):`); }
-    if (body === '3') { clearSession(chatId); setSession(chatId, 'SET_LESSON_DATE', { studentName }); return msg.reply(`Enter next lesson date for *${studentName}*:\n_(e.g. 12 May, May 12, 2026-05-12)_`); }
-    if (body === '4') { clearSession(chatId); setSession(chatId, 'CONFIRM_DELETE', { studentName }); return msg.reply(`Are you sure you want to delete *${studentName}*?\n\nType *yes* to confirm or *0* to cancel.`); }
+    if (body === '3') { clearSession(chatId); setSession(chatId, 'SET_RECURRING_TIME', { studentName }); return msg.reply(`Enter recurring lesson time for *${studentName}*:\n_(e.g. 3pm, 15:00)_\n\n0 — Back`); }
+    if (body === '4') {
+      clearSession(chatId);
+      const r = storage.getStudent(studentName);
+      const currentDate = r?.student?.nextLesson ? new Date(r.student.nextLesson).toDateString() : 'not set';
+      const currentTime = r?.student?.lessonTime ? formatTime(r.student.lessonTime) : 'not set';
+      setSession(chatId, 'OVERRIDE_DATE', { studentName });
+      return msg.reply(`Override this week's lesson for *${studentName}*.\nCurrent: ${currentDate} at ${currentTime}\n\nEnter new date (or *skip* to keep current):\n\n0 — Cancel`);
+    }
+    if (body === '5') { clearSession(chatId); setSession(chatId, 'CONFIRM_DELETE', { studentName }); return msg.reply(`Are you sure you want to delete *${studentName}*?\n\nType *yes* to confirm or *0* to cancel.`); }
     return;
+  }
+
+  if (state === 'SET_RECURRING_TIME') {
+    if (body === '0') { clearSession(chatId); return sendEditMenu(msg, sd.studentName); }
+    const time = parseTime(body);
+    if (!time) return msg.reply(`Couldn't parse that time. Try: *3pm*, *15:00*`);
+    clearSession(chatId);
+    const r = storage.getStudent(sd.studentName);
+    if (!r) return msg.reply('Student not found.');
+    r.student.lessonTime = time;
+    storage.saveStudent(r.key, r.student);
+    return msg.reply(`✅ Recurring lesson time set to *${formatTime(time)}* for *${r.key}*.`);
+  }
+
+  if (state === 'OVERRIDE_DATE') {
+    if (body === '0') { clearSession(chatId); return sendEditMenu(msg, sd.studentName); }
+    let nextLesson = null;
+    if (body.toLowerCase() !== 'skip') {
+      const parsed = parseDate(body);
+      if (!parsed) return msg.reply(`Couldn't parse that date. Try: *12 May* or type *skip*.`);
+      nextLesson = parsed.toISOString();
+    }
+    setSession(chatId, 'OVERRIDE_TIME', { ...sd, nextLesson });
+    const r = storage.getStudent(sd.studentName);
+    const currentTime = r?.student?.lessonTime ? formatTime(r.student.lessonTime) : 'not set';
+    return msg.reply(`Enter new time (or *skip* to keep current time: ${currentTime}):\n\n0 — Cancel`);
+  }
+
+  if (state === 'OVERRIDE_TIME') {
+    if (body === '0') { clearSession(chatId); return sendEditMenu(msg, sd.studentName); }
+    clearSession(chatId);
+    const r = storage.getStudent(sd.studentName);
+    if (!r) return msg.reply('Student not found.');
+    if (sd.nextLesson) r.student.nextLesson = sd.nextLesson;
+    if (body.toLowerCase() !== 'skip') {
+      const time = parseTime(body);
+      if (!time) return msg.reply(`Couldn't parse that time. Try: *3pm*, *15:00*`);
+      r.student.lessonTime = time;
+    }
+    storage.saveStudent(r.key, r.student);
+    const dateStr = r.student.nextLesson ? new Date(r.student.nextLesson).toDateString() : 'unchanged';
+    const timeStr = r.student.lessonTime ? formatTime(r.student.lessonTime) : 'unchanged';
+    return msg.reply(`✅ This week's lesson for *${r.key}* updated:\n📅 ${dateStr} at ${timeStr}\n\n_Recurring schedule unchanged._`);
   }
 
   if (state === 'RENAME_STUDENT') {
@@ -240,20 +284,32 @@ async function handleResponse(msg, client) {
     const isNA = body.toLowerCase() === 'n/a';
     let nextLesson = null;
     if (!isNA) {
-      const parsed = new Date(body);
-      if (isNaN(parsed.getTime())) return msg.reply(`Couldn't parse that date. Try: *12 May* or type *n/a* to skip.`);
+      const parsed = parseDate(body);
+      if (!parsed) return msg.reply(`Couldn't parse that date. Try: *12 May* or type *n/a* to skip.`);
       nextLesson = parsed.toISOString();
     }
+    setSession(chatId, 'SETUP_TIME', { ...sd, nextLesson });
+    return msg.reply(`What time do lessons start for *${sd.name}*? (e.g. 3pm, 15:00)\n_Type n/a to skip — 0 to cancel_`);
+  }
+
+  if (state === 'SETUP_TIME') {
+    if (body === '0') { clearSession(chatId); return sendMainMenu(msg, client); }
+    if (!body) return;
+    const isNA = body.toLowerCase() === 'n/a';
+    const lessonTime = isNA ? null : parseTime(body);
+    if (!isNA && !lessonTime) return msg.reply(`Couldn't parse that time. Try: *3pm*, *15:00* or *n/a* to skip.`);
     clearSession(chatId);
     storage.addStudent(sd.name);
     const r = storage.getStudent(sd.name);
     if (sd.year) r.student.year = sd.year;
-    if (nextLesson) r.student.nextLesson = nextLesson;
+    if (sd.nextLesson) r.student.nextLesson = sd.nextLesson;
+    if (lessonTime) r.student.lessonTime = lessonTime;
     storage.saveStudent(r.key, r.student);
     return msg.reply(
       `✅ *${r.key}* added!\n` +
       `Year: ${sd.year || 'not set'}\n` +
-      `Next lesson: ${nextLesson ? new Date(nextLesson).toDateString() : 'not set'}\n\n` +
+      `Next lesson: ${sd.nextLesson ? new Date(sd.nextLesson).toDateString() : 'not set'}` +
+      `${lessonTime ? ` at ${formatTime(lessonTime)}` : ''}\n\n` +
       `_Add topics and content from the student menu._`
     );
   }

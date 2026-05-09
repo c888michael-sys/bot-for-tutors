@@ -1,6 +1,7 @@
 const storage = require('./save');
 const reminders = require('./reminders');
 const interactive = require('./interactive');
+const { parseDate } = require('./utils');
 
 async function handle(msg, client) {
   const raw = msg.body.trim();
@@ -248,13 +249,6 @@ function findTopicKey(status, topic) {
 
 function cap(str) {
   return str.charAt(0).toUpperCase() + str.slice(1);
-}
-
-function parseDate(input) {
-  if (!input) return null;
-  const withYear = /\d{4}/.test(input) ? input : `${input} ${new Date().getFullYear()}`;
-  const d = new Date(withYear);
-  return isNaN(d.getTime()) ? null : d;
 }
 
 module.exports = { handle };
