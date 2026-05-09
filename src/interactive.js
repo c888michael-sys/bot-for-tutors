@@ -495,24 +495,25 @@ async function outputLesson(msg, studentName) {
 
 async function sendHelp(msg) {
   return msg.reply(
-    `*Commands*\n\n` +
-    `*Status:*\n` +
+    `*📖 Commands*\n\n` +
+    `*Topics (via menu or text):*\n` +
     `input status add [topic] [1-3] [name]\n` +
-    `input status [topic] [1-3] [name]\n` +
+    `input status [topic] [1-3] [name] _(update)_\n` +
     `input status remove [topic] [name]\n` +
-    `output status [name]\n\n` +
-    `*Homework & lesson:*\n` +
-    `input homework [name] [content]\n` +
-    `input lesson [name] [content]\n` +
-    `output homework [name]\n` +
-    `output lesson [name]\n\n` +
+    `output status [name]\n` +
+    `output homework [name] _(topics rated 2)_\n` +
+    `output lesson [name] _(topics rated 1)_\n\n` +
     `*Reminders:*\n` +
-    `lesson [name] end\n` +
-    `homework [name] done\n` +
-    `lesson [name] done\n\n` +
+    `homework [name] done _(stop homework reminder)_\n` +
+    `lesson [name] done _(stop lesson plan reminder)_\n\n` +
+    `*Lesson date:*\n` +
+    `lesson [name] date [date] _(e.g. 12 May)_\n\n` +
     `*Students:*\n` +
-    `student add / rename / delete [name]\n\n` +
-    `_Type *menu* anytime to return here._`
+    `student add [name]\n` +
+    `student rename [old] [new]\n` +
+    `student delete [name]\n` +
+    `student year [name] [year]\n\n` +
+    `_Most things are easier via the menu — type *menu* anytime._`
   );
 }
 
