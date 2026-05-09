@@ -109,8 +109,9 @@ async function checkLessonTimingReminders() {
       changed = true;
     }
 
-    // 10 minutes after lesson ends (assuming 1h lesson = 70 min after start)
-    if (!student.postReminderSent && currentMins === lessonMins + 70) {
+    // 10 minutes after lesson ends
+    const duration = student.lessonDuration || 60;
+    if (!student.postReminderSent && currentMins === lessonMins + duration + 10) {
       await botClient.sendMessage(data.tutorChatId, {
         text: `📝 *Log Lesson*\nLesson with *${name}* has ended.\nPlease update their progress and log the lesson content.`
       });

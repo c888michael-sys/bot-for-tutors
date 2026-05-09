@@ -42,6 +42,7 @@ function addStudent(name) {
   data.students[name] = {
     year: null,
     lessonTime: null,
+    lessonDuration: 60,
     status: {},
     homework: '',
     lesson: '',
