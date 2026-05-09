@@ -86,8 +86,8 @@ async function handleSetLessonDate(msg, name, dateText) {
     return msg.reply(`*${r.key}*'s next lesson: ${current}\n\nTo set: lesson ${r.key} date [date]`);
   }
 
-  const parsed = new Date(dateText);
-  if (isNaN(parsed.getTime())) {
+  const parsed = parseDate(dateText);
+  if (!parsed) {
     return msg.reply(`Couldn't parse "${dateText}" as a date.\nTry formats like: 12 May, May 12, 2026-05-12`);
   }
 
@@ -248,6 +248,13 @@ function findTopicKey(status, topic) {
 
 function cap(str) {
   return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+function parseDate(input) {
+  if (!input) return null;
+  const withYear = /\d{4}/.test(input) ? input : `${input} ${new Date().getFullYear()}`;
+  const d = new Date(withYear);
+  return isNaN(d.getTime()) ? null : d;
 }
 
 module.exports = { handle };

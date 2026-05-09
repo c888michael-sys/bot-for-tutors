@@ -2,6 +2,13 @@ const storage = require('./save');
 
 const sessions = new Map();
 
+function parseDate(input) {
+  if (!input) return null;
+  const withYear = /\d{4}/.test(input) ? input : `${input} ${new Date().getFullYear()}`;
+  const d = new Date(withYear);
+  return isNaN(d.getTime()) ? null : d;
+}
+
 function hasSession(chatId) { return sessions.has(chatId); }
 function setSession(chatId, state, data = {}) { sessions.set(chatId, { state, data }); }
 function clearSession(chatId) { sessions.delete(chatId); }
@@ -177,8 +184,8 @@ async function handleResponse(msg, client) {
 
   if (state === 'SET_LESSON_DATE') {
     if (body === '0') { clearSession(chatId); return sendStudentMenu(msg, sd.studentName); }
-    const parsed = new Date(body);
-    if (isNaN(parsed.getTime())) return; // ignore unparseable (e.g. bot replies)
+    const parsed = parseDate(body);
+    if (!parsed) return; // ignore unparseable (e.g. bot replies)
     clearSession(chatId);
     const r = storage.getStudent(sd.studentName);
     if (!r) return msg.reply('Student not found.');

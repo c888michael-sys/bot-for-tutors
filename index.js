@@ -27,9 +27,12 @@ async function startBot() {
 
     if (connection === 'open') {
       console.log('Tutor bot ready. Send "menu" to get started.\n');
-      // Save tutor JID for reminders
-      const jid = sock.user?.id?.replace(':0@', '@') || sock.user?.id;
-      if (jid) storage.setTutorChatId(jid);
+      // Save tutor JID for reminders (strip device suffix e.g. :27@s.whatsapp.net → @s.whatsapp.net)
+      const jid = sock.user?.id?.replace(/:\d+@/, '@') || sock.user?.id;
+      if (jid) {
+        storage.setTutorChatId(jid);
+        console.log('Tutor JID saved:', jid);
+      }
       reminders.init(sock);
     }
 
