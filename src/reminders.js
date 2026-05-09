@@ -5,7 +5,7 @@ let botClient = null;
 
 function init(client) {
   botClient = client;
-  cron.schedule('0 10 * * *', checkReminders);
+  cron.schedule('0 10 * * *', checkReminders, { timezone: 'Australia/Sydney' });
 }
 
 async function checkReminders() {
