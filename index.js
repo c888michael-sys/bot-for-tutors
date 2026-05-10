@@ -14,7 +14,10 @@ async function startBot() {
     auth: state,
     printQRInTerminal: false,
     browser: ['Tutor Bot', 'Chrome', '1.0'],
-    logger: pino({ level: 'silent' })
+    logger: pino({ level: 'silent' }),
+    syncFullHistory: false,
+    markOnlineOnConnect: false,
+    generateHighQualityLinkPreview: false
   });
 
   sock.ev.on('creds.update', saveCreds);
