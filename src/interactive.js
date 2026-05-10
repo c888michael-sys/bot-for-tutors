@@ -2,9 +2,20 @@ const storage = require('./save');
 const { parseDate, parseTime, formatTime } = require('./utils');
 
 const sessions = new Map();
+const SESSION_TIMEOUT = 10 * 60 * 1000; // 10 minutes
 
-function hasSession(chatId) { return sessions.has(chatId); }
-function setSession(chatId, state, data = {}) { sessions.set(chatId, { state, data }); }
+function hasSession(chatId) {
+  const s = sessions.get(chatId);
+  if (!s) return false;
+  if (Date.now() - s.lastActive > SESSION_TIMEOUT) {
+    sessions.delete(chatId);
+    return false;
+  }
+  return true;
+}
+function setSession(chatId, state, data = {}) {
+  sessions.set(chatId, { state, data, lastActive: Date.now() });
+}
 function clearSession(chatId) { sessions.delete(chatId); }
 
 // ─── Menus ───────────────────────────────────────────────────────────────────
@@ -83,6 +94,9 @@ async function handleResponse(msg, client) {
   const chatId = msg.from;
   const session = sessions.get(chatId);
   if (!session) return;
+
+  // Refresh timeout on every interaction
+  session.lastActive = Date.now();
 
   const body = msg.body.trim();
   const lower = body.toLowerCase();
@@ -318,26 +332,17 @@ async function handleResponse(msg, client) {
     return msg.reply(`✅ Updated *${sd.topicName}* to ${rating}/3 (${label}) for *${r.key}*.`);
   }
 
-  if (state === 'SET_HOMEWORK') {
-    if (body === '0') { clearSession(chatId); return sendStudentMenu(msg, sd.studentName); }
-    if (!body) return;
+  if (state === 'CONFIRM_REMOVE_TOPIC') {
+    if (lower === 'yes') {
+      clearSession(chatId);
+      const r = storage.getStudent(sd.studentName);
+      if (!r) return msg.reply('Student not found.');
+      delete r.student.status[sd.topicKey];
+      storage.saveStudent(r.key, r.student);
+      return msg.reply(`✅ Removed *${sd.topicKey}* from *${r.key}*.`);
+    }
     clearSession(chatId);
-    const r = storage.getStudent(sd.studentName);
-    if (!r) return msg.reply('Student not found.');
-    r.student.homework = body;
-    storage.saveStudent(r.key, r.student);
-    return msg.reply(`✅ Homework saved for *${r.key}*:\n${body}`);
-  }
-
-  if (state === 'SET_LESSON') {
-    if (body === '0') { clearSession(chatId); return sendStudentMenu(msg, sd.studentName); }
-    if (!body) return;
-    clearSession(chatId);
-    const r = storage.getStudent(sd.studentName);
-    if (!r) return msg.reply('Student not found.');
-    r.student.lesson = body;
-    storage.saveStudent(r.key, r.student);
-    return msg.reply(`✅ Lesson plan saved for *${r.key}*:\n${body}`);
+    return msg.reply('Cancelled.');
   }
 
   // ── Setup wizard ─────────────────────────────────────────────────────────
@@ -517,4 +522,8 @@ async function sendHelp(msg) {
   );
 }
 
-module.exports = { hasSession, handleResponse, sendMainMenu, outputStatus, outputHomework, outputLesson };
+function askConfirmRemoveTopic(chatId, studentName, topicKey) {
+  setSession(chatId, 'CONFIRM_REMOVE_TOPIC', { studentName, topicKey });
+}
+
+module.exports = { hasSession, handleResponse, sendMainMenu, outputStatus, outputHomework, outputLesson, askConfirmRemoveTopic };

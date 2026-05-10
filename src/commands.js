@@ -164,9 +164,8 @@ async function handleInputStatus(msg, tokens, lower) {
     const { key, student } = match;
     const topicKey = findTopicKey(student.status, topic);
     if (!topicKey) return msg.reply(`Error: topic "${topic}" not found for ${key}.`);
-    delete student.status[topicKey];
-    storage.saveStudent(key, student);
-    return msg.reply(`✅ Removed "${topicKey}" from *${key}*.`);
+    interactive.askConfirmRemoveTopic(msg.from, key, topicKey);
+    return msg.reply(`Remove *${topicKey}* from *${key}*?\n\nType *yes* to confirm or anything else to cancel.`);
   }
 
   // add or modify: find student suffix, then check that the token just before it is a rating
