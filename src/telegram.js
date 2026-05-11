@@ -36,8 +36,8 @@ const studentListKeyboard = (names) => {
 };
 
 const studentMenuKeyboard = (name) => Markup.inlineKeyboard([
-  [btn('📊 Status', `s:${name}:status`),    btn('➕ Add Topic', `s:${name}:add_topic`)],
-  [btn('✏️ Update Topic Rating', `s:${name}:upd_topic`)],
+  [btn('📊 Status', `s:${name}:status`)],
+  [btn('➕ Add Topic', `s:${name}:add_topic`), btn('✏️ Update Rating', `s:${name}:upd_topic`)],
   [btn('📚 Homework', `s:${name}:hw`),      btn('📋 Lesson', `s:${name}:lesson`)],
   [btn('📅 Lesson Date', `s:${name}:lesson_date`), btn('⏸ Snooze', `s:${name}:snooze`)],
   [btn('⚙️ Edit Info', `s:${name}:edit`)],
