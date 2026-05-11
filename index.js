@@ -1,61 +1,138 @@
-const { Client, LocalAuth } = require('whatsapp-web.js');
+const { default: makeWASocket, DisconnectReason, useMultiFileAuthState, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const qrcode = require('qrcode-terminal');
+const QRCode = require('qrcode');
+const pino = require('pino');
+const http = require('http');
 const commands = require('./src/commands');
 const reminders = require('./src/reminders');
 const storage = require('./src/save');
 
-const client = new Client({
-  authStrategy: new LocalAuth(),
-  authTimeoutMs: 120000,
-  puppeteer: {
-    headless: 'new',
-    executablePath: '/usr/bin/chromium',
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-gpu',
-      '--disable-software-rasterizer',
-      '--disable-extensions',
-      '--no-first-run',
-      '--disable-accelerated-2d-canvas'
-    ]
-  }
-});
+// ── QR HTTP server ────────────────────────────────────────────────────────────
 
-client.on('qr', qr => {
-  console.log('\nScan this QR code with WhatsApp:\n');
-  qrcode.generate(qr, { small: true });
-});
+let qrServer = null;
+let currentQR = null;
 
-client.on('authenticated', () => console.log('Authenticated.'));
+async function startQRServer(qr) {
+  currentQR = qr;
+  if (qrServer) return; // already running, just update currentQR
 
-client.on('ready', () => {
-  console.log('Tutor bot ready. Send "menu" to get started.\n');
-  const jid = client.info?.wid?._serialized;
-  if (jid) {
-    storage.setTutorChatId(jid);
-    console.log('Tutor JID saved:', jid);
-  }
-  reminders.init(client);
-});
+  qrServer = http.createServer(async (req, res) => {
+    if (!currentQR) {
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end('<h2 style="font-family:sans-serif;text-align:center;padding:20px">Bot is connected. No QR needed.</h2>');
+      return;
+    }
+    const dataUrl = await QRCode.toDataURL(currentQR, { width: 400 });
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    res.end(`<!DOCTYPE html>
+<html>
+<head>
+  <title>Tutor Bot — Scan QR</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="refresh" content="25">
+  <style>
+    body { font-family: sans-serif; text-align: center; padding: 20px; background: #f5f5f5; }
+    img { width: 280px; border: 8px solid white; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.15); }
+    p { color: #666; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <h2>Scan with WhatsApp</h2>
+  <img src="${dataUrl}" alt="QR Code"><br>
+  <p>Open WhatsApp → Linked Devices → Link a Device → scan above.<br>Page auto-refreshes every 25 seconds.</p>
+</body>
+</html>`);
+  });
 
-client.on('auth_failure', err => console.error('Auth failed:', err));
-client.on('disconnected', reason => console.log('Disconnected:', reason));
+  qrServer.listen(8080, () => {
+    console.log('QR page ready at http://YOUR_SERVER_IP:8080');
+  });
+}
+
+function stopQRServer() {
+  currentQR = null;
+  if (qrServer) { qrServer.close(); qrServer = null; }
+}
+
+// ── Bot ───────────────────────────────────────────────────────────────────────
+
+async function startBot() {
+  const { state, saveCreds } = await useMultiFileAuthState('.baileys_auth');
+  const { version } = await fetchLatestBaileysVersion();
+
+  const sock = makeWASocket({
+    version,
+    auth: state,
+    printQRInTerminal: false,
+    browser: ['Tutor Bot', 'Chrome', '1.0'],
+    logger: pino({ level: 'silent' }),
+    syncFullHistory: false,
+    markOnlineOnConnect: false,
+    generateHighQualityLinkPreview: false
+  });
+
+  sock.ev.on('creds.update', saveCreds);
+
+  sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
+    if (qr) {
+      qrcode.generate(qr, { small: true });
+      await startQRServer(qr);
+    }
+
+    if (connection === 'open') {
+      stopQRServer();
+      console.log('Tutor bot ready. Send "menu" to get started.\n');
+      const jid = sock.user?.id?.replace(/:\d+@/, '@') || sock.user?.id;
+      if (jid) {
+        storage.setTutorChatId(jid);
+        console.log('Tutor JID saved:', jid);
+      }
+      reminders.init(sock);
+    }
+
+    if (connection === 'close') {
+      const code = lastDisconnect?.error?.output?.statusCode;
+      if (code === DisconnectReason.loggedOut) {
+        console.log('Logged out. Send "reset bot" to re-link.');
+      } else {
+        console.log('Reconnecting...');
+        startBot();
+      }
+    }
+  });
+
+  sock.ev.on('messages.upsert', async ({ messages, type }) => {
+    if (type !== 'notify') return;
+    for (const raw of messages) {
+      if (!raw.key.fromMe) continue;
+      if (raw.key.remoteJid?.endsWith('@g.us')) continue;
+      const msg = wrapMessage(sock, raw);
+      try {
+        await commands.handle(msg, sock);
+      } catch (err) {
+        console.error('Error handling message:', err);
+      }
+    }
+  });
+}
+
+function wrapMessage(sock, raw) {
+  const jid = raw.key.remoteJid;
+  const body = raw.message?.conversation ||
+               raw.message?.extendedTextMessage?.text || '';
+  return {
+    body,
+    from: jid,
+    fromMe: raw.key.fromMe,
+    type: 'chat',
+    reply: async (text) => {
+      await sock.sendMessage(jid, { text: String(text) }, { quoted: raw });
+    }
+  };
+}
 
 process.on('unhandledRejection', err => {
   console.error('Unhandled error:', err?.message || err);
 });
 
-// message_create fires for messages YOU send (needed for self-chat commands)
-client.on('message_create', async msg => {
-  if (!msg.fromMe) return;
-  if (msg.from.endsWith('@g.us')) return;
-  try {
-    await commands.handle(msg, client);
-  } catch (err) {
-    console.error('Error handling message:', err);
-  }
-});
-
-client.initialize();
+startBot();

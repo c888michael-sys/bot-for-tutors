@@ -15,7 +15,7 @@ function init(client) {
 }
 
 async function send(chatId, text) {
-  await botClient.sendMessage(chatId, text);
+  await botClient.sendMessage(chatId, { text });
 }
 
 // ── Auto-trigger ──────────────────────────────────────────────────────────────

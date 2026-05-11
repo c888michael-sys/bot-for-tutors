@@ -30,7 +30,7 @@ async function handle(msg, client) {
   // ── Session reset ────────────────────────────────────────────────────────
   if (lower.join(' ') === 'reset bot') {
     await msg.reply('🔄 Resetting session... Check `pm2 logs tutor-bot` for the new QR code in ~10 seconds.');
-    const authDir = path.join(__dirname, '..', '.wwebjs_auth');
+    const authDir = path.join(__dirname, '..', '.baileys_auth');
     fs.rmSync(authDir, { recursive: true, force: true });
     setTimeout(() => process.exit(0), 1500);
     return;
