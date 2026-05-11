@@ -23,9 +23,10 @@ function refreshSession(chatId) { const s = sessions.get(chatId); if (s) s.lastA
 
 // ── Keyboards ─────────────────────────────────────────────────────────────────
 
-const mainMenuKeyboard = () => Markup.inlineKeyboard([
+const mainMenuKeyboard = (isAdmin) => Markup.inlineKeyboard([
   [btn('👤 Students', 'students'), btn('🔔 Reminders', 'reminders')],
   [btn('➕ Add Student', 'setup'), btn('📖 Help', 'help')],
+  ...(isAdmin ? [[btn('👑 Admin Panel', 'admin')]] : []),
 ]);
 
 const studentListKeyboard = (names) => {
@@ -63,7 +64,7 @@ const cid = (ctx) => String(ctx.chat.id);
 // ── Menu senders ──────────────────────────────────────────────────────────────
 
 async function sendMainMenu(ctx) {
-  await reply(ctx, '*🎓 Tutor Bot*\n\nWhat would you like to do?', mainMenuKeyboard());
+  await reply(ctx, '*🎓 Tutor Bot*\n\nWhat would you like to do?', mainMenuKeyboard(storage.isAdmin(cid(ctx))));
 }
 
 async function sendStudentList(ctx) {
@@ -109,6 +110,7 @@ async function handleCallback(ctx, bot) {
   if (cbData === 'students')  return sendStudentList(ctx);
   if (cbData === 'reminders') return sendActiveReminders(ctx);
   if (cbData === 'help')      return sendHelp(ctx);
+  if (cbData === 'admin')     return sendAdminPanel(ctx);
 
   // Reminder action buttons
   if (parts[0] === 'rdone') {
@@ -154,6 +156,22 @@ async function handleCallback(ctx, bot) {
     return ctx.reply('Add another topic?', { ...md, ...Markup.inlineKeyboard([
       [btn('➕ Add Another', `s:${r.key}:add_topic`), btn('✅ Done', `s:${r.key}`)],
     ]) });
+  }
+
+  // Admin: delete user
+  if (parts[0] === 'adel') {
+    if (!storage.isAdmin(chatId)) return;
+    const targetId = parts[1];
+    const user = storage.getAllUsers()[targetId];
+    if (parts[2] === 'confirm') {
+      storage.deleteUser(targetId);
+      await ctx.reply(`✅ *${user?.name || targetId}* deleted.`, md);
+      return sendAdminPanel(ctx);
+    }
+    return reply(ctx, `Delete *${user?.name || targetId}*? This cannot be undone.`,
+      Markup.inlineKeyboard([
+        [btn('✅ Yes, delete', `adel:${targetId}:confirm`), btn('❌ Cancel', 'admin')],
+      ]));
   }
 
   if (parts[0] !== 's') return;
@@ -527,6 +545,18 @@ async function sendHelp(ctx) {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+async function sendAdminPanel(ctx) {
+  if (!storage.isAdmin(cid(ctx))) return ctx.reply('⛔ Admin only.');
+  const users = storage.getAllUsers();
+  const entries = Object.entries(users);
+  if (entries.length === 0) return reply(ctx, '*👑 Admin Panel*\n\nNo users.', Markup.inlineKeyboard([[btn('⬅️ Back', 'menu')]]));
+
+  const lines = entries.map(([id, u]) => `• *${u.name || 'Unnamed'}*`).join('\n');
+  const rows = entries.map(([id, u]) => [btn(`🗑 Delete ${u.name || id}`, `adel:${id}`)]);
+  rows.push([btn('⬅️ Back', 'menu')]);
+  await reply(ctx, `*👑 Admin Panel*\n\n*Users:*\n${lines}`, Markup.inlineKeyboard(rows));
+}
 
 function doReply(ctxOrMsg, text) {
   return ctxOrMsg.reply(text, md);

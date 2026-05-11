@@ -7,16 +7,24 @@ const storage = require('./src/save');
 
 const bot = new Telegraf(config.botToken);
 
-// Password gate — new users must enter the password to unlock the bot
+// Password gate — new users must enter password then set their name
 bot.use(async (ctx, next) => {
   const chatId = String(ctx.chat?.id);
   if (!chatId) return;
   if (storage.isRegistered(chatId)) return next();
 
   const text = ctx.message?.text?.trim();
+
+  if (storage.isPendingSetup(chatId)) {
+    if (!text || text.startsWith('/')) return ctx.reply('Please enter your name:');
+    storage.completeSetup(chatId, text);
+    const isAdmin = storage.isAdmin(chatId);
+    return ctx.reply(`👋 Welcome, *${text}*!${isAdmin ? ' You are the admin.' : ''}\n\nSend /menu to get started.`, { parse_mode: 'Markdown' });
+  }
+
   if (text === config.password) {
-    storage.registerUser(chatId);
-    return ctx.reply('✅ Access granted! Send /menu to get started.');
+    storage.startSetup(chatId);
+    return ctx.reply('✅ Password correct!\n\nWhat\'s your name? (so the admin knows who you are)');
   }
   return ctx.reply('🔒 Enter the password to use this bot:');
 });

@@ -25,12 +25,17 @@ function getData() {
     if (raw.students && !raw.users) {
       const migrated = { users: {} };
       if (raw.tutorChatId) {
-        migrated.users[raw.tutorChatId] = { registered: true, students: raw.students };
+        migrated.users[raw.tutorChatId] = { registered: true, name: null, students: raw.students };
       }
       saveData(migrated);
       return migrated;
     }
     if (!raw.users) raw.users = {};
+    // Auto-set first admin if not set
+    if (!raw.adminChatId) {
+      const first = Object.keys(raw.users)[0];
+      if (first) { raw.adminChatId = first; saveData(raw); }
+    }
     return raw;
   } catch {
     return { users: {} };
@@ -49,10 +54,35 @@ function isRegistered(chatId) {
   return !!data.users?.[chatId]?.registered;
 }
 
-function registerUser(chatId) {
+function isPendingSetup(chatId) {
   const data = getData();
-  if (!data.users[chatId]) data.users[chatId] = { registered: true, students: {} };
-  else data.users[chatId].registered = true;
+  return !!data.users?.[chatId]?.pendingSetup;
+}
+
+function startSetup(chatId) {
+  const data = getData();
+  if (!data.users) data.users = {};
+  data.users[chatId] = { registered: false, pendingSetup: true, name: null, students: {} };
+  saveData(data);
+}
+
+function completeSetup(chatId, name) {
+  const data = getData();
+  data.users[chatId].registered = true;
+  data.users[chatId].pendingSetup = false;
+  data.users[chatId].name = name;
+  // First registered user becomes admin
+  if (!data.adminChatId) data.adminChatId = chatId;
+  saveData(data);
+}
+
+function isAdmin(chatId) {
+  return getData().adminChatId === chatId;
+}
+
+function deleteUser(chatId) {
+  const data = getData();
+  delete data.users[chatId];
   saveData(data);
 }
 
@@ -135,7 +165,8 @@ function getStudents(chatId) {
 
 module.exports = {
   getData, saveData,
-  isRegistered, registerUser, getAllUsers,
+  isRegistered, isPendingSetup, startSetup, completeSetup,
+  isAdmin, deleteUser, getAllUsers,
   getStudents, findStudentKey, getStudent, saveStudent,
   addStudent, renameStudent, deleteStudent,
   resolveStudentSuffix
