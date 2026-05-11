@@ -1,57 +1,49 @@
 const { default: makeWASocket, DisconnectReason, useMultiFileAuthState, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
-const qrcode = require('qrcode-terminal');
-const QRCode = require('qrcode');
 const pino = require('pino');
 const http = require('http');
 const commands = require('./src/commands');
 const reminders = require('./src/reminders');
 const storage = require('./src/save');
 
-// ── QR HTTP server ────────────────────────────────────────────────────────────
+// ── Pairing code HTTP server ───────────────────────────────────────────────
 
-let qrServer = null;
-let currentQR = null;
+let httpServer = null;
+let pairingCode = null;
 
-async function startQRServer(qr) {
-  currentQR = qr;
-  if (qrServer) return; // already running, just update currentQR
-
-  qrServer = http.createServer(async (req, res) => {
-    if (!currentQR) {
-      res.writeHead(200, { 'Content-Type': 'text/html' });
-      res.end('<h2 style="font-family:sans-serif;text-align:center;padding:20px">Bot is connected. No QR needed.</h2>');
-      return;
-    }
-    const dataUrl = await QRCode.toDataURL(currentQR, { width: 400 });
+function startHttpServer() {
+  if (httpServer) return;
+  httpServer = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/html' });
+    const content = pairingCode
+      ? `<h2>WhatsApp Pairing Code</h2>
+         <div class="code">${pairingCode}</div>
+         <p>Open WhatsApp → Settings → Linked Devices → Link a Device → <b>Link with phone number</b> → enter the code above.</p>
+         <p style="color:#aaa;font-size:13px">Page auto-refreshes every 15 seconds.</p>`
+      : `<h2>Requesting pairing code...</h2><p>Refresh in a few seconds.</p>`;
+
     res.end(`<!DOCTYPE html>
 <html>
 <head>
-  <title>Tutor Bot — Scan QR</title>
+  <title>Tutor Bot — Link WhatsApp</title>
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta http-equiv="refresh" content="25">
+  <meta http-equiv="refresh" content="15">
   <style>
-    body { font-family: sans-serif; text-align: center; padding: 20px; background: #f5f5f5; }
-    img { width: 280px; border: 8px solid white; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.15); }
-    p { color: #666; font-size: 14px; }
+    body { font-family: sans-serif; text-align: center; padding: 30px; background: #f5f5f5; }
+    .code { font-size: 48px; font-weight: bold; letter-spacing: 8px; color: #128C7E;
+            background: white; padding: 20px 30px; border-radius: 12px;
+            display: inline-block; margin: 20px 0; box-shadow: 0 2px 12px rgba(0,0,0,0.1); }
+    p { color: #555; line-height: 1.6; }
   </style>
 </head>
-<body>
-  <h2>Scan with WhatsApp</h2>
-  <img src="${dataUrl}" alt="QR Code"><br>
-  <p>Open WhatsApp → Linked Devices → Link a Device → scan above.<br>Page auto-refreshes every 25 seconds.</p>
-</body>
+<body>${content}</body>
 </html>`);
   });
-
-  qrServer.listen(8080, () => {
-    console.log('QR page ready at http://YOUR_SERVER_IP:8080');
-  });
+  httpServer.listen(8080, () => console.log('Pairing page ready at http://YOUR_SERVER_IP:8080'));
 }
 
-function stopQRServer() {
-  currentQR = null;
-  if (qrServer) { qrServer.close(); qrServer = null; }
+function stopHttpServer() {
+  pairingCode = null;
+  if (httpServer) { httpServer.close(); httpServer = null; }
 }
 
 // ── Bot ───────────────────────────────────────────────────────────────────────
@@ -73,14 +65,29 @@ async function startBot() {
 
   sock.ev.on('creds.update', saveCreds);
 
-  sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
-    if (qr) {
-      qrcode.generate(qr, { small: true });
-      await startQRServer(qr);
+  // Request pairing code if not yet registered
+  if (!sock.authState.creds.registered) {
+    startHttpServer();
+    const data = storage.getData();
+    const phone = data.tutorChatId ? data.tutorChatId.split('@')[0] : null;
+    if (phone) {
+      setTimeout(async () => {
+        try {
+          const code = await sock.requestPairingCode(phone);
+          pairingCode = code;
+          console.log('Pairing code:', code);
+        } catch (e) {
+          console.error('Failed to get pairing code:', e.message);
+        }
+      }, 3000);
+    } else {
+      console.log('No phone number stored yet. Please set tutorChatId in data/storage.json first.');
     }
+  }
 
+  sock.ev.on('connection.update', async ({ connection, lastDisconnect }) => {
     if (connection === 'open') {
-      stopQRServer();
+      stopHttpServer();
       console.log('Tutor bot ready. Send "menu" to get started.\n');
       const jid = sock.user?.id?.replace(/:\d+@/, '@') || sock.user?.id;
       if (jid) {
@@ -93,7 +100,7 @@ async function startBot() {
     if (connection === 'close') {
       const code = lastDisconnect?.error?.output?.statusCode;
       if (code === DisconnectReason.loggedOut) {
-        console.log('Logged out. Send "reset bot" to re-link.');
+        console.log('Logged out. Send "reset bot" on WhatsApp to re-link.');
       } else {
         console.log('Reconnecting...');
         startBot();
