@@ -11,6 +11,7 @@ const DEFAULT_STUDENT = () => ({
   status: {},
   homework: '',
   lesson: '',
+  exams: [],
   nextLesson: null,
   preReminderSent: false,
   postReminderSent: false,

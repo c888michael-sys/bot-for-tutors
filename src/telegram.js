@@ -38,6 +38,7 @@ const studentListKeyboard = (names) => {
 const studentMenuKeyboard = (name) => Markup.inlineKeyboard([
   [btn('📊 Status', `s:${name}:status`)],
   [btn('➕ Add Topic', `s:${name}:add_topic`), btn('✏️ Update Rating', `s:${name}:upd_topic`)],
+  [btn('📝 Exam Results', `s:${name}:exams`)],
   [btn('📚 Homework', `s:${name}:hw`),      btn('📋 Lesson', `s:${name}:lesson`)],
   [btn('📅 Lesson Date', `s:${name}:lesson_date`), btn('⏸ Snooze', `s:${name}:snooze`)],
   [btn('⚙️ Edit Info', `s:${name}:edit`)],
@@ -183,6 +184,7 @@ async function handleCallback(ctx, bot) {
   if (action === 'status') return outputStatus(ctx, name, chatId);
   if (action === 'hw')     return outputHomework(ctx, name, chatId);
   if (action === 'lesson') return outputLesson(ctx, name, chatId);
+  if (action === 'exams')  return handleExamAction(ctx, chatId, name, parts);
 
   if (action === 'add_topic') {
     setSession(chatId, 'ADD_TOPIC_NAME', { studentName: name });
@@ -482,6 +484,48 @@ async function handleTextInput(ctx, bot) {
     return ctx.reply(`*${r.key}*`, { ...md, ...studentMenuKeyboard(r.key) });
   }
 
+  if (state === 'EXAM_NAME') {
+    if (!body || body.length > 100) return;
+    setSession(chatId, 'EXAM_MARK', { ...sd, examName: body });
+    return ctx.reply(`Mark for *${body}*?\n_(e.g. 75/100)_\n\n/cancel to cancel`, md);
+  }
+
+  if (state === 'EXAM_MARK') {
+    const match = body.match(/^(\d+\.?\d*)\s*[\/out of]+\s*(\d+\.?\d*)$/i) ||
+                  body.match(/^(\d+\.?\d*)\/(\d+\.?\d*)$/);
+    if (!match) return ctx.reply(`Couldn't parse that. Try format: *75/100*`, md);
+    const mark = parseFloat(match[1]);
+    const total = parseFloat(match[2]);
+    clearSession(chatId);
+    const r = storage.getStudent(chatId, sd.studentName);
+    if (!r) return ctx.reply('Student not found.');
+    if (!r.student.exams) r.student.exams = [];
+    const today = new Date().toISOString().split('T')[0];
+    const pct = Math.round((mark / total) * 100);
+    r.student.exams.push({ id: Date.now(), name: sd.examName, mark, total, date: today });
+    storage.saveStudent(chatId, r.key, r.student);
+    await ctx.reply(`✅ Added *${sd.examName}* — ${mark}/${total} (${pct}%) for *${r.key}*.`, md);
+    return ctx.reply(`*${r.key}*`, { ...md, ...studentMenuKeyboard(r.key) });
+  }
+
+  if (state === 'EXAM_EDIT_MARK') {
+    const match = body.match(/^(\d+\.?\d*)\s*[\/out of]+\s*(\d+\.?\d*)$/i) ||
+                  body.match(/^(\d+\.?\d*)\/(\d+\.?\d*)$/);
+    if (!match) return ctx.reply(`Couldn't parse that. Try format: *75/100*`, md);
+    const mark = parseFloat(match[1]);
+    const total = parseFloat(match[2]);
+    clearSession(chatId);
+    const r = storage.getStudent(chatId, sd.studentName);
+    if (!r) return ctx.reply('Student not found.');
+    const idx = (r.student.exams || []).findIndex(e => e.id === sd.examId);
+    if (idx === -1) return ctx.reply('Exam not found.');
+    r.student.exams[idx].mark  = mark;
+    r.student.exams[idx].total = total;
+    storage.saveStudent(chatId, r.key, r.student);
+    const pct = Math.round((mark / total) * 100);
+    return ctx.reply(`✅ Updated *${r.student.exams[idx].name}* → ${mark}/${total} (${pct}%).`, md);
+  }
+
   if (state === 'CONFIRM_REMOVE_TOPIC') {
     clearSession(chatId);
     if (body.toLowerCase() === 'yes') {
@@ -492,6 +536,65 @@ async function handleTextInput(ctx, bot) {
       return ctx.reply(`✅ Removed *${sd.topicKey}* from *${r.key}*.`, md);
     }
     return ctx.reply('Cancelled.');
+  }
+}
+
+// ── Exam handler ─────────────────────────────────────────────────────────────
+
+async function handleExamAction(ctx, chatId, name, parts) {
+  const r = storage.getStudent(chatId, name);
+  if (!r) return sendStudentList(ctx);
+  const { key, student } = r;
+  const exams = student.exams || [];
+  const sub = parts[3]; // add | del | edit | (undefined = list)
+
+  // Show exam list
+  if (!sub) {
+    const sorted = [...exams].sort((a, b) => new Date(b.date) - new Date(a.date));
+    const lines = sorted.length
+      ? sorted.map(e => {
+          const pct = Math.round((e.mark / e.total) * 100);
+          return `• *${e.name}* — ${e.mark}/${e.total} (${pct}%) — ${new Date(e.date).toDateString()}`;
+        }).join('\n')
+      : '_No exams recorded yet._';
+    const rows = sorted.map(e => [
+      btn(`✏️ ${e.name}`, `s:${key}:exams:edit:${e.id}`),
+      btn(`🗑`, `s:${key}:exams:del:${e.id}`),
+    ]);
+    rows.unshift([btn('➕ Add Exam Result', `s:${key}:exams:add`)]);
+    rows.push([btn('⬅️ Back', `s:${key}`)]);
+    return reply(ctx, `*📝 Exam Results: ${key}*\n\n${lines}`, Markup.inlineKeyboard(rows));
+  }
+
+  if (sub === 'add') {
+    setSession(chatId, 'EXAM_NAME', { studentName: key });
+    return ctx.reply(`Exam name for *${key}*? (e.g. Algebra Test)\n\n/cancel to cancel`, md);
+  }
+
+  const examId = parseInt(parts[4]);
+  const examIdx = exams.findIndex(e => e.id === examId);
+
+  if (sub === 'del') {
+    if (parts[5] === 'yes') {
+      if (examIdx !== -1) {
+        exams.splice(examIdx, 1);
+        student.exams = exams;
+        storage.saveStudent(chatId, key, student);
+      }
+      await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => {});
+      return ctx.reply(`✅ Exam deleted.`, md);
+    }
+    const exam = exams[examIdx];
+    return reply(ctx, `Delete *${exam?.name || 'this exam'}*?`, Markup.inlineKeyboard([
+      [btn('✅ Yes', `s:${key}:exams:del:${examId}:yes`), btn('❌ Cancel', `s:${key}:exams`)],
+    ]));
+  }
+
+  if (sub === 'edit') {
+    if (examIdx === -1) return ctx.reply('Exam not found.');
+    setSession(chatId, 'EXAM_EDIT_MARK', { studentName: key, examId });
+    return ctx.reply(
+      `Enter new mark for *${exams[examIdx].name}*:\n_(e.g. 85/100)_\n\n/cancel to cancel`, md);
   }
 }
 
