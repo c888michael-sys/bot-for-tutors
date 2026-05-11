@@ -128,7 +128,9 @@ async function handleCallback(ctx, bot) {
     r.student.status[topic] = rating;
     storage.saveStudent(chatId, r.key, r.student);
     await ctx.reply(`✅ Added *${topic}* (${rating}/3 — ${label}) for *${r.key}*.`, md);
-    return ctx.reply(`*${r.key}*`, { ...md, ...studentMenuKeyboard(r.key) });
+    return ctx.reply('Add another topic?', { ...md, ...Markup.inlineKeyboard([
+      [btn('➕ Add Another', `s:${r.key}:add_topic`), btn('✅ Done', `s:${r.key}`)],
+    ]) });
   }
 
   if (parts[0] !== 's') return;
