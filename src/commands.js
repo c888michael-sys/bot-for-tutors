@@ -2,6 +2,8 @@ const storage = require('./save');
 const reminders = require('./reminders');
 const interactive = require('./interactive');
 const { parseDate } = require('./utils');
+const fs = require('fs');
+const path = require('path');
 
 async function handle(msg, client) {
   const raw = msg.body.trim();
@@ -24,6 +26,15 @@ async function handle(msg, client) {
   }
 
   const cmd0 = lower[0];
+
+  // ── Session reset ────────────────────────────────────────────────────────
+  if (lower.join(' ') === 'reset bot') {
+    await msg.reply('🔄 Resetting session... Check `pm2 logs tutor-bot` for the new QR code in ~10 seconds.');
+    const authDir = path.join(__dirname, '..', '.baileys_auth');
+    fs.rmSync(authDir, { recursive: true, force: true });
+    setTimeout(() => process.exit(0), 1500);
+    return;
+  }
 
   // ── Stop reminders (no input/output prefix) ──────────────────────────────
   if ((cmd0 === 'homework' || cmd0 === 'lesson') && lower[lower.length - 1] === 'done') {
