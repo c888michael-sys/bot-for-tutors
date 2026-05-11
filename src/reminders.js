@@ -27,6 +27,7 @@ async function checkAutoTrigger() {
   const currentMins = sydneyMinutes();
 
   for (const [chatId, userData] of Object.entries(data.users || {})) {
+    if (userData.remindersEnabled === false) continue;
     let changed = false;
     for (const [name, student] of Object.entries(userData.students || {})) {
       if (!student.nextLesson) continue;
@@ -69,6 +70,7 @@ async function sendDailyReminders() {
   const now = Date.now();
 
   for (const [chatId, userData] of Object.entries(data.users || {})) {
+    if (userData.remindersEnabled === false) continue;
     let changed = false;
     for (const [name, student] of Object.entries(userData.students || {})) {
       if (student.homeworkReminder.active) {
@@ -106,6 +108,7 @@ async function checkLessonTimingReminders() {
   const currentMins = sydneyMinutes();
 
   for (const [chatId, userData] of Object.entries(data.users || {})) {
+    if (userData.remindersEnabled === false) continue;
     let changed = false;
     for (const [name, student] of Object.entries(userData.students || {})) {
       if (!student.lessonTime || !student.nextLesson) continue;

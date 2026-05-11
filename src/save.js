@@ -163,6 +163,16 @@ function getStudents(chatId) {
   return data.users?.[chatId]?.students || {};
 }
 
+function getRemindersEnabled(chatId) {
+  const data = getData();
+  return data.users?.[chatId]?.remindersEnabled !== false; // default true
+}
+
+function setRemindersEnabled(chatId, enabled) {
+  const data = getData();
+  if (data.users[chatId]) { data.users[chatId].remindersEnabled = enabled; saveData(data); }
+}
+
 function getPassword(fallback) {
   const data = getData();
   return data.password || fallback;
@@ -186,6 +196,7 @@ module.exports = {
   isRegistered, isPendingSetup, startSetup, completeSetup,
   isAdmin, deleteUser, getAllUsers,
   getPassword, setPassword, generatePassword,
+  getRemindersEnabled, setRemindersEnabled,
   getStudents, findStudentKey, getStudent, saveStudent,
   addStudent, renameStudent, deleteStudent,
   resolveStudentSuffix

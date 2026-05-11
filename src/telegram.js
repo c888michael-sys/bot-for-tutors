@@ -559,20 +559,47 @@ async function sendActiveReminders(ctx) {
 
 async function sendHelp(ctx) {
   await reply(ctx,
-    `*📖 Commands*\n\n` +
-    `*Status (or use menu):*\n` +
+    `*📖 All Commands*\n\n` +
+
+    `*📊 Topic tracking:*\n` +
     `\`input status add [topic] [1-3] [name]\`\n` +
-    `\`input status [topic] [1-3] [name]\`\n` +
-    `\`input status remove [topic] [name]\`\n` +
-    `\`output status [name]\`\n\n` +
-    `*Reminders:*\n` +
-    `\`homework [name] done\`\n` +
-    `\`lesson [name] done\`\n\n` +
-    `*Lesson date:*\n` +
-    `\`lesson [name] date [date]\`\n\n` +
-    `*Students:*\n` +
-    `\`student add/rename/delete/year [name]\`\n\n` +
-    `_Type /menu anytime._`,
+    `\`input status [topic] [1-3] [name]\` — update rating\n` +
+    `\`input status remove [topic] [name]\` — removes with confirm\n` +
+    `\`output status [name]\`\n` +
+    `\`output homework [name]\` — topics rated 2\n` +
+    `\`output lesson [name]\` — topics rated 1\n\n` +
+
+    `*📝 Content:*\n` +
+    `\`input homework [name] [content]\`\n` +
+    `\`input lesson [name] [content]\`\n\n` +
+
+    `*🔔 Reminders:*\n` +
+    `\`reminders on\` / \`reminders off\` — global toggle\n` +
+    `\`reminder [name] homework/lesson/both\` — reactivate\n` +
+    `\`homework [name] done\` — stop homework reminder\n` +
+    `\`lesson [name] done\` — stop lesson plan reminder\n\n` +
+
+    `*📅 Lesson date:*\n` +
+    `\`lesson [name] date [date]\` — e.g. 12 May\n\n` +
+
+    `*👤 Students:*\n` +
+    `\`student add [name]\`\n` +
+    `\`student rename [old] [new]\`\n` +
+    `\`student delete [name]\`\n` +
+    `\`student year [name] [year]\`\n\n` +
+
+    `*👑 Admin only:*\n` +
+    `\`/password\` — view current password\n` +
+    `\`/newpassword\` — generate new password\n` +
+    `\`/testnotify\` — send test to all users\n\n` +
+
+    `*🔘 Menu buttons do:*\n` +
+    `Status · Add Topic · Update Rating\n` +
+    `Homework/Lesson view · Lesson Date\n` +
+    `Snooze (per reminder) · Edit Info\n` +
+    `_(Edit: rename, year, schedule, duration, override this week, delete)_\n\n` +
+
+    `_Type /menu anytime to open the menu._`,
     Markup.inlineKeyboard([[btn('⬅️ Back', 'menu')]]));
 }
 

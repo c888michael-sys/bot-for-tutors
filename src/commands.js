@@ -20,6 +20,20 @@ async function handle(msg, client) {
     return handleStopReminder(msg, cmd0, name);
   }
 
+  // ── Global reminder toggle: reminders on/off ─────────────────────────────
+  if (cmd0 === 'reminders') {
+    const state = lower[1];
+    if (state === 'off') {
+      storage.setRemindersEnabled(chatId, false);
+      return msg.reply('🔕 All reminders disabled. Type `reminders on` to re-enable.');
+    }
+    if (state === 'on') {
+      storage.setRemindersEnabled(chatId, true);
+      return msg.reply('🔔 Reminders enabled.');
+    }
+    return msg.reply('Usage: `reminders on` or `reminders off`');
+  }
+
   // ── Re-activate reminders: reminder [name] homework/lesson/both ──────────
   if (cmd0 === 'reminder') {
     const type = lower[lower.length - 1]; // last word = type
