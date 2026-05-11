@@ -15,7 +15,7 @@ function init(client) {
 }
 
 async function send(chatId, text) {
-  await botClient.sendMessage(chatId, { text });
+  await botClient.telegram.sendMessage(chatId, text, { parse_mode: 'Markdown' });
 }
 
 // ── Auto-trigger ──────────────────────────────────────────────────────────────

@@ -3,3 +3,4 @@ node_modules/
 .wwebjs_cache/
 .baileys_auth/
 data/storage.json
+data/config.json

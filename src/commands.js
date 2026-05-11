@@ -1,9 +1,7 @@
 const storage = require('./save');
 const reminders = require('./reminders');
-const interactive = require('./interactive');
+const telegram = require('./telegram');
 const { parseDate } = require('./utils');
-const fs = require('fs');
-const path = require('path');
 
 async function handle(msg, client) {
   const raw = msg.body.trim();
@@ -17,24 +15,7 @@ async function handle(msg, client) {
   const appData = storage.getData();
   if (!appData.tutorChatId) storage.setTutorChatId(chatId);
 
-  // Button / list responses routed through interactive sessions
-  if (msg.type === 'buttons_response' || msg.type === 'list_response') {
-    return interactive.handleResponse(msg, client);
-  }
-  if (interactive.hasSession(chatId)) {
-    return interactive.handleResponse(msg, client);
-  }
-
   const cmd0 = lower[0];
-
-  // ── Session reset ────────────────────────────────────────────────────────
-  if (lower.join(' ') === 'reset bot') {
-    await msg.reply('🔄 Resetting session... Check `pm2 logs tutor-bot` for the new QR code in ~10 seconds.');
-    const authDir = path.join(__dirname, '..', '.baileys_auth');
-    fs.rmSync(authDir, { recursive: true, force: true });
-    setTimeout(() => process.exit(0), 1500);
-    return;
-  }
 
   // ── Stop reminders (no input/output prefix) ──────────────────────────────
   if ((cmd0 === 'homework' || cmd0 === 'lesson') && lower[lower.length - 1] === 'done') {
@@ -53,7 +34,7 @@ async function handle(msg, client) {
   if (cmd0 === 'student') return handleStudentCmd(msg, tokens, lower);
 
   // ── Menu / help ──────────────────────────────────────────────────────────
-  if (cmd0 === 'menu' || cmd0 === 'help') return interactive.sendMainMenu(msg, client);
+  if (cmd0 === 'menu' || cmd0 === 'help') return msg.reply('Use /menu to open the menu.');
 
   // ── input / output ───────────────────────────────────────────────────────
   if (cmd0 === 'input') {
@@ -175,7 +156,7 @@ async function handleInputStatus(msg, tokens, lower) {
     const { key, student } = match;
     const topicKey = findTopicKey(student.status, topic);
     if (!topicKey) return msg.reply(`Error: topic "${topic}" not found for ${key}.`);
-    interactive.askConfirmRemoveTopic(msg.from, key, topicKey);
+    telegram.askConfirmRemoveTopic(msg.from, key, topicKey);
     return msg.reply(`Remove *${topicKey}* from *${key}*?\n\nType *yes* to confirm or anything else to cancel.`);
   }
 
@@ -240,15 +221,15 @@ async function handleInputContent(msg, tokens, type) {
 async function handleOutputStatus(msg, tokens) {
   const name = tokens.slice(2).join(' ').trim();
   if (!name) return msg.reply('Usage: output status [student name]');
-  return interactive.outputStatus(msg, name);
+  return telegram.outputStatus(msg, name);
 }
 
 async function handleOutputType(msg, tokens, type) {
   const name = tokens.slice(2).join(' ').trim();
   if (!name) return msg.reply(`Usage: output ${type} [student name]`);
   return type === 'homework'
-    ? interactive.outputHomework(msg, name)
-    : interactive.outputLesson(msg, name);
+    ? telegram.outputHomework(msg, name)
+    : telegram.outputLesson(msg, name);
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
