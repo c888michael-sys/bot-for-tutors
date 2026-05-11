@@ -136,8 +136,9 @@ async function handleStudentCmd(msg, tokens, lower) {
   if (action === 'delete') {
     const name = tokens.slice(2).join(' ').trim();
     if (!name) return msg.reply('Usage: student delete [name]');
-    const ok = storage.deleteStudent(chatId, name);
-    return msg.reply(ok ? `✅ Student *${name}* deleted.` : `"${name}" not found.`);
+    if (!storage.getStudent(chatId, name)) return msg.reply(`"${name}" not found.`);
+    telegram.askConfirmDelete(msg.from, name);
+    return msg.reply(`Delete *${name}*? This cannot be undone.\n\nType *yes* to confirm or anything else to cancel.`);
   }
   if (action === 'year') {
     const name = tokens[2], year = tokens[3];

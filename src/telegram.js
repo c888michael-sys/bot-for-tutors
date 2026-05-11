@@ -537,6 +537,15 @@ async function handleTextInput(ctx, bot) {
     }
     return ctx.reply('Cancelled.');
   }
+
+  if (state === 'CONFIRM_DELETE_STUDENT') {
+    clearSession(chatId);
+    if (body.toLowerCase() === 'yes') {
+      const ok = storage.deleteStudent(chatId, sd.studentName);
+      return ctx.reply(ok ? `✅ *${sd.studentName}* deleted.` : 'Student not found.', md);
+    }
+    return ctx.reply('Cancelled.');
+  }
 }
 
 // ── Exam handler ─────────────────────────────────────────────────────────────
@@ -738,8 +747,12 @@ function askConfirmRemoveTopic(chatId, studentName, topicKey) {
   setSession(chatId, 'CONFIRM_REMOVE_TOPIC', { studentName, topicKey });
 }
 
+function askConfirmDelete(chatId, studentName) {
+  setSession(chatId, 'CONFIRM_DELETE_STUDENT', { studentName });
+}
+
 module.exports = {
   hasSession, handleCallback, handleTextInput,
   sendMainMenu, sendStudentMenu, outputStatus, outputHomework, outputLesson,
-  sendActiveReminders, wrapMsg, askConfirmRemoveTopic,
+  sendActiveReminders, wrapMsg, askConfirmRemoveTopic, askConfirmDelete,
 };
