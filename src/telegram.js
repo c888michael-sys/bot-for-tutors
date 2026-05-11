@@ -240,28 +240,38 @@ async function handleCallback(ctx, bot) {
     if (!r) return sendStudentList(ctx);
     const { key, student } = r;
 
-    // Sub-action: stop a specific reminder
-    if (sub === 'hw' || sub === 'lesson' || sub === 'both') {
+    const confirm = parts[4];
+
+    // Confirmed — actually stop the reminder
+    if ((sub === 'hw' || sub === 'lesson' || sub === 'both') && confirm === 'yes') {
       const data = storage.getData();
-      if (sub === 'hw' || sub === 'both')     data.users[chatId].students[key].homeworkReminder.active = false;
+      if (sub === 'hw'     || sub === 'both') data.users[chatId].students[key].homeworkReminder.active = false;
       if (sub === 'lesson' || sub === 'both') data.users[chatId].students[key].lessonReminder.active   = false;
       storage.saveData(data);
-      const label = sub === 'hw' ? 'Homework' : sub === 'lesson' ? 'Lesson plan' : 'All';
+      const label = sub === 'hw' ? 'Homework' : sub === 'lesson' ? 'Lesson plan' : 'Both reminders';
       await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => {});
-      return ctx.reply(`✅ ${label} reminder stopped for *${key}*.`, md);
+      return ctx.reply(`✅ ${label} stopped for *${key}*.\n\nTo reactivate: \`reminder ${key} ${sub === 'hw' ? 'homework' : sub === 'lesson' ? 'lesson' : 'both'}\``, md);
+    }
+
+    // Show confirmation prompt
+    if (sub === 'hw' || sub === 'lesson' || sub === 'both') {
+      const label = sub === 'hw' ? 'homework' : sub === 'lesson' ? 'lesson plan' : 'both';
+      return reply(ctx, `Stop *${label}* reminder for *${key}*?`, Markup.inlineKeyboard([
+        [btn('✅ Yes, stop it', `s:${key}:snooze:${sub}:yes`), btn('❌ Cancel', `s:${key}:snooze`)],
+      ]));
     }
 
     // Show which reminders are active
     const hw = student.homeworkReminder?.active;
     const ls = student.lessonReminder?.active;
     if (!hw && !ls) {
-      return reply(ctx, `*${key}* has no active reminders.`,
+      return reply(ctx, `*${key}* has no active reminders.\n\nTo reactivate: \`reminder ${key} both\``,
         Markup.inlineKeyboard([[btn('⬅️ Back', `s:${key}`)]]));
     }
     const rows = [];
-    if (hw) rows.push([btn('📚 Stop Homework Reminder', `s:${key}:snooze:hw`)]);
+    if (hw) rows.push([btn('📚 Stop Homework Reminder',    `s:${key}:snooze:hw`)]);
     if (ls) rows.push([btn('📋 Stop Lesson Plan Reminder', `s:${key}:snooze:lesson`)]);
-    if (hw && ls) rows.push([btn('🛑 Stop Both', `s:${key}:snooze:both`)]);
+    if (hw && ls) rows.push([btn('🛑 Stop Both',           `s:${key}:snooze:both`)]);
     rows.push([btn('⬅️ Back', `s:${key}`)]);
     return reply(ctx, `*Active Reminders: ${key}*\nSelect which to stop:`, Markup.inlineKeyboard(rows));
   }

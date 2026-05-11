@@ -20,6 +20,13 @@ async function handle(msg, client) {
     return handleStopReminder(msg, cmd0, name);
   }
 
+  // ── Re-activate reminders: reminder [name] homework/lesson/both ──────────
+  if (cmd0 === 'reminder') {
+    const type = lower[lower.length - 1]; // last word = type
+    const name = tokens.slice(1, -1).join(' ');
+    return handleReactivateReminder(msg, name, type);
+  }
+
   // ── Set next lesson date: lesson [name] date [date text] ─────────────────
   if (cmd0 === 'lesson' && lower[2] === 'date') {
     const name = tokens[1];
@@ -61,6 +68,20 @@ async function handleStopReminder(msg, type, name) {
   if (!key) return msg.reply(`Student "${name}" not found.`);
   const label = type === 'homework' ? 'Homework' : 'Lesson plan';
   return msg.reply(`✅ ${label} reminder stopped for *${key}*.`);
+}
+
+async function handleReactivateReminder(msg, name, type) {
+  if (!name || !['homework', 'lesson', 'both'].includes(type))
+    return msg.reply('Usage: `reminder [name] homework/lesson/both`');
+  const chatId = msg.from;
+  const data = storage.getData();
+  const key = storage.findStudentKey(chatId, name);
+  if (!key) return msg.reply(`Student "${name}" not found.`);
+  if (type === 'homework' || type === 'both') data.users[chatId].students[key].homeworkReminder.active = true;
+  if (type === 'lesson'   || type === 'both') data.users[chatId].students[key].lessonReminder.active   = true;
+  storage.saveData(data);
+  const label = type === 'homework' ? 'Homework' : type === 'lesson' ? 'Lesson plan' : 'Both';
+  return msg.reply(`✅ ${label} reminder reactivated for *${key}*. Follows the existing schedule.`);
 }
 
 async function handleSetLessonDate(msg, name, dateText) {
