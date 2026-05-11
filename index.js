@@ -65,27 +65,30 @@ async function startBot() {
 
   sock.ev.on('creds.update', saveCreds);
 
-  // Request pairing code if not yet registered
-  if (!sock.authState.creds.registered) {
-    startHttpServer();
-    const data = storage.getData();
-    const phone = data.tutorChatId ? data.tutorChatId.split('@')[0] : null;
-    if (phone) {
-      setTimeout(async () => {
+  const data = storage.getData();
+  const phone = data.tutorChatId ? data.tutorChatId.split('@')[0] : null;
+  let pairingRequested = false;
+
+  sock.ev.on('connection.update', async ({ connection, lastDisconnect }) => {
+    // Request pairing code once when connection is first establishing
+    if (!sock.authState.creds.registered && !pairingRequested && connection !== 'close') {
+      pairingRequested = true;
+      startHttpServer();
+      if (phone) {
+        await new Promise(r => setTimeout(r, 5000)); // wait for connection to stabilise
         try {
           const code = await sock.requestPairingCode(phone);
           pairingCode = code;
           console.log('Pairing code:', code);
         } catch (e) {
           console.error('Failed to get pairing code:', e.message);
+          pairingRequested = false; // allow retry on next connection event
         }
-      }, 3000);
-    } else {
-      console.log('No phone number stored yet. Please set tutorChatId in data/storage.json first.');
+      } else {
+        console.log('No phone number stored. Add tutorChatId to data/storage.json.');
+      }
     }
-  }
 
-  sock.ev.on('connection.update', async ({ connection, lastDisconnect }) => {
     if (connection === 'open') {
       stopHttpServer();
       console.log('Tutor bot ready. Send "menu" to get started.\n');
