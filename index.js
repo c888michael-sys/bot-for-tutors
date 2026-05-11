@@ -7,16 +7,18 @@ const storage = require('./src/save');
 
 const bot = new Telegraf(config.botToken);
 
-// Register tutor chat ID on first interaction
+// Password gate — new users must enter the password to unlock the bot
 bot.use(async (ctx, next) => {
-  if (ctx.chat?.id) {
-    const data = storage.getData();
-    if (!data.tutorChatId) {
-      storage.setTutorChatId(String(ctx.chat.id));
-      console.log('Tutor chat ID saved:', ctx.chat.id);
-    }
+  const chatId = String(ctx.chat?.id);
+  if (!chatId) return;
+  if (storage.isRegistered(chatId)) return next();
+
+  const text = ctx.message?.text?.trim();
+  if (text === config.password) {
+    storage.registerUser(chatId);
+    return ctx.reply('✅ Access granted! Send /menu to get started.');
   }
-  return next();
+  return ctx.reply('🔒 Enter the password to use this bot:');
 });
 
 // Commands

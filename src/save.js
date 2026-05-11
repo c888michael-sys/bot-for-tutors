@@ -3,11 +3,37 @@ const path = require('path');
 
 const DATA_FILE = path.join(__dirname, '..', 'data', 'storage.json');
 
+const DEFAULT_STUDENT = () => ({
+  year: null,
+  lessonDay: null,
+  lessonTime: null,
+  lessonDuration: 60,
+  status: {},
+  homework: '',
+  lesson: '',
+  nextLesson: null,
+  preReminderSent: false,
+  postReminderSent: false,
+  homeworkReminder: { active: false, lastSent: null },
+  lessonReminder: { active: false, lastSent: null, nextLesson: null }
+});
+
 function getData() {
   try {
-    return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+    const raw = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+    // Auto-migrate old single-user format
+    if (raw.students && !raw.users) {
+      const migrated = { users: {} };
+      if (raw.tutorChatId) {
+        migrated.users[raw.tutorChatId] = { registered: true, students: raw.students };
+      }
+      saveData(migrated);
+      return migrated;
+    }
+    if (!raw.users) raw.users = {};
+    return raw;
   } catch {
-    return { tutorChatId: null, students: {} };
+    return { users: {} };
   }
 }
 
@@ -16,87 +42,101 @@ function saveData(data) {
   fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
 }
 
-function findStudentKey(data, name) {
-  return Object.keys(data.students).find(
-    k => k.toLowerCase() === name.toLowerCase()
-  ) || null;
+// ── User management ───────────────────────────────────────────────────────────
+
+function isRegistered(chatId) {
+  const data = getData();
+  return !!data.users?.[chatId]?.registered;
 }
 
-function getStudent(name) {
+function registerUser(chatId) {
   const data = getData();
-  const key = findStudentKey(data, name);
-  return key ? { key, student: data.students[key] } : null;
+  if (!data.users[chatId]) data.users[chatId] = { registered: true, students: {} };
+  else data.users[chatId].registered = true;
+  saveData(data);
 }
 
-function saveStudent(name, studentData) {
+function getAllUsers() {
+  return getData().users || {};
+}
+
+// ── Student operations (all scoped to chatId) ─────────────────────────────────
+
+function findStudentKey(chatId, name) {
   const data = getData();
-  const key = findStudentKey(data, name) || name;
-  data.students[key] = studentData;
+  const students = data.users?.[chatId]?.students || {};
+  return Object.keys(students).find(k => k.toLowerCase() === name.toLowerCase()) || null;
+}
+
+function getStudent(chatId, name) {
+  const data = getData();
+  const students = data.users?.[chatId]?.students || {};
+  const key = Object.keys(students).find(k => k.toLowerCase() === name.toLowerCase());
+  return key ? { key, student: students[key] } : null;
+}
+
+function saveStudent(chatId, name, studentData) {
+  const data = getData();
+  if (!data.users[chatId]) data.users[chatId] = { registered: true, students: {} };
+  const key = findStudentKey(chatId, name) || name;
+  data.users[chatId].students[key] = studentData;
   saveData(data);
   return key;
 }
 
-function addStudent(name) {
+function addStudent(chatId, name) {
   const data = getData();
-  if (findStudentKey(data, name)) return false;
-  data.students[name] = {
-    year: null,
-    lessonDay: null,
-    lessonTime: null,
-    lessonDuration: 60,
-    status: {},
-    homework: '',
-    lesson: '',
-    nextLesson: null,
-    preReminderSent: false,
-    postReminderSent: false,
-    homeworkReminder: { active: false, lastSent: null },
-    lessonReminder: { active: false, lastSent: null, nextLesson: null }
-  };
+  if (!data.users[chatId]) data.users[chatId] = { registered: true, students: {} };
+  if (findStudentKey(chatId, name)) return false;
+  data.users[chatId].students[name] = DEFAULT_STUDENT();
   saveData(data);
   return true;
 }
 
-function renameStudent(oldName, newName) {
+function renameStudent(chatId, oldName, newName) {
   const data = getData();
-  const oldKey = findStudentKey(data, oldName);
+  const students = data.users?.[chatId]?.students;
+  if (!students) return 'not_found';
+  const oldKey = Object.keys(students).find(k => k.toLowerCase() === oldName.toLowerCase());
   if (!oldKey) return 'not_found';
-  if (findStudentKey(data, newName)) return 'exists';
-  data.students[newName] = data.students[oldKey];
-  delete data.students[oldKey];
+  if (Object.keys(students).find(k => k.toLowerCase() === newName.toLowerCase())) return 'exists';
+  students[newName] = students[oldKey];
+  delete students[oldKey];
   saveData(data);
   return 'ok';
 }
 
-function deleteStudent(name) {
+function deleteStudent(chatId, name) {
   const data = getData();
-  const key = findStudentKey(data, name);
+  const students = data.users?.[chatId]?.students;
+  if (!students) return false;
+  const key = Object.keys(students).find(k => k.toLowerCase() === name.toLowerCase());
   if (!key) return false;
-  delete data.students[key];
+  delete students[key];
   saveData(data);
   return true;
 }
 
-function setTutorChatId(chatId) {
+function resolveStudentSuffix(chatId, tokens) {
   const data = getData();
-  data.tutorChatId = chatId;
-  saveData(data);
-}
-
-// Try to resolve a student name from the end of a token array.
-// Tries up to 3-word suffixes. Returns { key, student, nameLen } or null.
-function resolveStudentSuffix(tokens, data) {
+  const students = data.users?.[chatId]?.students || {};
   for (let len = Math.min(3, tokens.length); len >= 1; len--) {
     const candidate = tokens.slice(tokens.length - len).join(' ');
-    const key = findStudentKey(data, candidate);
-    if (key) return { key, student: data.students[key], nameLen: len };
+    const key = Object.keys(students).find(k => k.toLowerCase() === candidate.toLowerCase());
+    if (key) return { key, student: students[key], nameLen: len };
   }
   return null;
 }
 
+function getStudents(chatId) {
+  const data = getData();
+  return data.users?.[chatId]?.students || {};
+}
+
 module.exports = {
-  getData, saveData, findStudentKey,
-  getStudent, saveStudent,
+  getData, saveData,
+  isRegistered, registerUser, getAllUsers,
+  getStudents, findStudentKey, getStudent, saveStudent,
   addStudent, renameStudent, deleteStudent,
-  setTutorChatId, resolveStudentSuffix
+  resolveStudentSuffix
 };

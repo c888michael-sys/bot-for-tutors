@@ -50,13 +50,15 @@ const editMenuKeyboard = (name) => Markup.inlineKeyboard([
   [btn('⬅️ Back', `s:${name}`)],
 ]);
 
-// ── Reply helpers ─────────────────────────────────────────────────────────────
+// ── Reply helper ──────────────────────────────────────────────────────────────
 
 const md = { parse_mode: 'Markdown' };
-const reply = (ctx, text, extra = {}) => {
-  if (ctx.callbackQuery) return ctx.editMessageText(text, { ...md, ...extra });
-  return ctx.reply(text, { ...md, ...extra });
-};
+const reply = (ctx, text, extra = {}) =>
+  ctx.callbackQuery
+    ? ctx.editMessageText(text, { ...md, ...extra })
+    : ctx.reply(text, { ...md, ...extra });
+
+const cid = (ctx) => String(ctx.chat.id);
 
 // ── Menu senders ──────────────────────────────────────────────────────────────
 
@@ -65,34 +67,34 @@ async function sendMainMenu(ctx) {
 }
 
 async function sendStudentList(ctx) {
-  const data = storage.getData();
-  const names = Object.keys(data.students);
-  if (names.length === 0) {
+  const names = Object.keys(storage.getStudents(cid(ctx)));
+  if (names.length === 0)
     return reply(ctx, 'No students yet. Use Add Student to get started.',
       Markup.inlineKeyboard([[btn('⬅️ Back', 'menu')]]));
-  }
   await reply(ctx, '*👤 Select a Student*', studentListKeyboard(names));
 }
 
 async function sendStudentMenu(ctx, studentName) {
-  const r = storage.getStudent(studentName);
+  const chatId = cid(ctx);
+  const r = storage.getStudent(chatId, studentName);
   if (!r) return sendStudentList(ctx);
   const { key, student } = r;
   const date = student.nextLesson ? new Date(student.nextLesson).toDateString() : 'not set';
   const time = student.lessonTime ? formatTime(student.lessonTime) : 'not set';
-  const day = student.lessonDay ? student.lessonDay + ' · ' : '';
+  const day  = student.lessonDay  ? student.lessonDay + ' · ' : '';
   const year = student.year ? ` · ${student.year}` : '';
   await reply(ctx, `*${key}*${year}\n📅 ${day}${date} at ${time}`, studentMenuKeyboard(key));
 }
 
 async function sendEditMenu(ctx, studentName) {
-  const r = storage.getStudent(studentName);
+  const chatId = cid(ctx);
+  const r = storage.getStudent(chatId, studentName);
   if (!r) return sendStudentList(ctx);
   const { key, student } = r;
-  const time = student.lessonTime ? formatTime(student.lessonTime) : 'not set';
-  const day = student.lessonDay || 'not set';
+  const time     = student.lessonTime ? formatTime(student.lessonTime) : 'not set';
+  const day      = student.lessonDay || 'not set';
   const duration = student.lessonDuration || 60;
-  const year = student.year || 'not set';
+  const year     = student.year || 'not set';
   await reply(ctx, `*✏️ Edit: ${key}* · ${year}\n📅 ${day} · ${time} · ${duration} min`, editMenuKeyboard(key));
 }
 
@@ -100,14 +102,13 @@ async function sendEditMenu(ctx, studentName) {
 
 async function handleCallback(ctx, bot) {
   const cbData = ctx.callbackQuery.data;
-  const chatId = String(ctx.chat.id);
-  const parts = cbData.split(':');
+  const chatId = cid(ctx);
+  const parts  = cbData.split(':');
 
-  if (cbData === 'menu') return sendMainMenu(ctx);
-  if (cbData === 'students') return sendStudentList(ctx);
+  if (cbData === 'menu')      return sendMainMenu(ctx);
+  if (cbData === 'students')  return sendStudentList(ctx);
   if (cbData === 'reminders') return sendActiveReminders(ctx);
-  if (cbData === 'help') return sendHelp(ctx);
-
+  if (cbData === 'help')      return sendHelp(ctx);
   if (cbData === 'setup') {
     setSession(chatId, 'SETUP_NAME');
     return ctx.reply('Enter student name:\n\n/cancel to cancel');
@@ -121,25 +122,23 @@ async function handleCallback(ctx, bot) {
     const rating = parseInt(parts[1]);
     clearSession(chatId);
     const { studentName, topic } = session.data;
-    const r = storage.getStudent(studentName);
+    const r = storage.getStudent(chatId, studentName);
     if (!r) return ctx.reply('Student not found.');
     const label = rating === 1 ? 'Poor/Not learnt' : rating === 2 ? 'Getting there' : 'Good';
     r.student.status[topic] = rating;
-    storage.saveStudent(r.key, r.student);
+    storage.saveStudent(chatId, r.key, r.student);
     await ctx.reply(`✅ Added *${topic}* (${rating}/3 — ${label}) for *${r.key}*.`, md);
     return ctx.reply(`*${r.key}*`, { ...md, ...studentMenuKeyboard(r.key) });
   }
 
   if (parts[0] !== 's') return;
-
-  const name = parts[1];
+  const name   = parts[1];
   const action = parts[2];
 
   if (!action) return sendStudentMenu(ctx, name);
-
-  if (action === 'status') return outputStatus(ctx, name);
-  if (action === 'hw') return outputHomework(ctx, name);
-  if (action === 'lesson') return outputLesson(ctx, name);
+  if (action === 'status') return outputStatus(ctx, name, chatId);
+  if (action === 'hw')     return outputHomework(ctx, name, chatId);
+  if (action === 'lesson') return outputLesson(ctx, name, chatId);
 
   if (action === 'add_topic') {
     setSession(chatId, 'ADD_TOPIC_NAME', { studentName: name });
@@ -147,36 +146,32 @@ async function handleCallback(ctx, bot) {
   }
 
   if (action === 'upd_topic' && !parts[3]) {
-    const r = storage.getStudent(name);
+    const r = storage.getStudent(chatId, name);
     if (!r) return sendStudentList(ctx);
     const topics = Object.entries(r.student.status);
-    if (topics.length === 0)
-      return ctx.reply(`*${name}* has no topics yet.`, md);
+    if (topics.length === 0) return ctx.reply(`*${name}* has no topics yet.`, md);
     const rows = topics.map(([t, v], i) => [btn(`${t} (${v}/3)`, `s:${name}:upd:${i}`)]);
     rows.push([btn('⬅️ Back', `s:${name}`)]);
     return reply(ctx, `*Update Topic: ${name}*`, Markup.inlineKeyboard(rows));
   }
 
-  // s:name:upd:idx — show rating buttons
   if (action === 'upd' && parts[3] !== undefined && parts[4] === undefined) {
-    const r = storage.getStudent(name);
+    const r = storage.getStudent(chatId, name);
     if (!r) return sendStudentList(ctx);
     const topics = Object.entries(r.student.status);
     const idx = parseInt(parts[3]);
     if (idx < 0 || idx >= topics.length) return sendStudentMenu(ctx, name);
     const [topicName, cur] = topics[idx];
-    const rows = [
+    return reply(ctx, `*${topicName}* — currently ${cur}/3\n\nNew rating:`, Markup.inlineKeyboard([
       [btn('1 — Poor / Not learnt', `s:${name}:upd:${idx}:1`)],
-      [btn('2 — Getting there', `s:${name}:upd:${idx}:2`)],
-      [btn('3 — Good', `s:${name}:upd:${idx}:3`)],
+      [btn('2 — Getting there',     `s:${name}:upd:${idx}:2`)],
+      [btn('3 — Good',              `s:${name}:upd:${idx}:3`)],
       [btn('⬅️ Back', `s:${name}:upd_topic`)],
-    ];
-    return reply(ctx, `*${topicName}* — currently ${cur}/3\n\nNew rating:`, Markup.inlineKeyboard(rows));
+    ]));
   }
 
-  // s:name:upd:idx:rating — apply rating
   if (action === 'upd' && parts[4] !== undefined) {
-    const r = storage.getStudent(name);
+    const r = storage.getStudent(chatId, name);
     if (!r) return sendStudentList(ctx);
     const topics = Object.entries(r.student.status);
     const idx = parseInt(parts[3]);
@@ -185,23 +180,23 @@ async function handleCallback(ctx, bot) {
     const [topicName] = topics[idx];
     const label = rating === 1 ? 'Poor/Not learnt' : rating === 2 ? 'Getting there' : 'Good';
     r.student.status[topicName] = rating;
-    storage.saveStudent(r.key, r.student);
+    storage.saveStudent(chatId, r.key, r.student);
     await ctx.reply(`✅ *${topicName}* → ${rating}/3 (${label}) for *${r.key}*.`, md);
     return ctx.reply(`*${r.key}*`, { ...md, ...studentMenuKeyboard(r.key) });
   }
 
   if (action === 'lesson_date') {
     setSession(chatId, 'LESSON_DATE', { studentName: name });
-    return ctx.reply(`Enter next lesson date for *${name}*:\n_(e.g. 12 May, May 12)_\n\n/cancel to cancel`, md);
+    return ctx.reply(`Enter next lesson date for *${name}*:\n_(e.g. 12 May)_\n\n/cancel to cancel`, md);
   }
 
   if (action === 'snooze') {
-    const d = storage.getData();
-    const key = storage.findStudentKey(d, name);
+    const data = storage.getData();
+    const key  = storage.findStudentKey(chatId, name);
     if (!key) return sendStudentList(ctx);
-    d.students[key].homeworkReminder.active = false;
-    d.students[key].lessonReminder.active = false;
-    storage.saveData(d);
+    data.users[chatId].students[key].homeworkReminder.active = false;
+    data.users[chatId].students[key].lessonReminder.active   = false;
+    storage.saveData(data);
     await ctx.reply(`⏸ Reminders snoozed for *${key}*.`, md);
     return ctx.reply(`*${key}*`, { ...md, ...studentMenuKeyboard(key) });
   }
@@ -210,39 +205,26 @@ async function handleCallback(ctx, bot) {
     const sub = parts[3];
     if (!sub) return sendEditMenu(ctx, name);
 
-    if (sub === 'rename') {
-      setSession(chatId, 'RENAME_STUDENT', { studentName: name });
-      return ctx.reply(`Enter new name for *${name}*:\n\n/cancel to cancel`, md);
-    }
-    if (sub === 'year') {
-      setSession(chatId, 'SET_YEAR', { studentName: name });
-      return ctx.reply(`Enter year for *${name}* (e.g. Y7, Y11):\n\n/cancel to cancel`, md);
-    }
-    if (sub === 'schedule') {
-      setSession(chatId, 'SET_SCHEDULE_DAY', { studentName: name });
-      return ctx.reply(`Enter lesson day for *${name}* (e.g. Monday, Sunday):\n\n/cancel to cancel`, md);
-    }
-    if (sub === 'duration') {
-      setSession(chatId, 'SET_DURATION', { studentName: name });
-      return ctx.reply(`Enter lesson duration for *${name}* in minutes (e.g. 60, 90):\n\n/cancel to cancel`, md);
-    }
+    if (sub === 'rename')   { setSession(chatId, 'RENAME_STUDENT', { studentName: name }); return ctx.reply(`Enter new name for *${name}*:\n\n/cancel to cancel`, md); }
+    if (sub === 'year')     { setSession(chatId, 'SET_YEAR',        { studentName: name }); return ctx.reply(`Enter year for *${name}* (e.g. Y7, Y11):\n\n/cancel to cancel`, md); }
+    if (sub === 'duration') { setSession(chatId, 'SET_DURATION',    { studentName: name }); return ctx.reply(`Enter duration for *${name}* in minutes (e.g. 60, 90):\n\n/cancel to cancel`, md); }
+    if (sub === 'schedule') { setSession(chatId, 'SET_SCHEDULE_DAY',{ studentName: name }); return ctx.reply(`Enter lesson day for *${name}* (e.g. Monday):\n\n/cancel to cancel`, md); }
+
     if (sub === 'override') {
-      const r = storage.getStudent(name);
+      const r = storage.getStudent(chatId, name);
       const curDate = r?.student?.nextLesson ? new Date(r.student.nextLesson).toDateString() : 'not set';
-      const curTime = r?.student?.lessonTime ? formatTime(r.student.lessonTime) : 'not set';
+      const curTime = r?.student?.lessonTime  ? formatTime(r.student.lessonTime) : 'not set';
       setSession(chatId, 'OVERRIDE_DATE', { studentName: name });
-      return ctx.reply(
-        `Override this week's lesson for *${name}*\nCurrent: ${curDate} at ${curTime}\n\nEnter new date (or *skip* to keep):\n\n/cancel to cancel`, md);
+      return ctx.reply(`Override this week's lesson for *${name}*\nCurrent: ${curDate} at ${curTime}\n\nEnter new date (or *skip* to keep):\n\n/cancel to cancel`, md);
     }
     if (sub === 'delete' && parts[4] !== 'confirm') {
-      return reply(ctx, `Delete *${name}*? This cannot be undone.`,
-        Markup.inlineKeyboard([
-          [btn('✅ Yes, delete', `s:${name}:edit:delete:confirm`)],
-          [btn('❌ Cancel', `s:${name}:edit`)],
-        ]));
+      return reply(ctx, `Delete *${name}*? This cannot be undone.`, Markup.inlineKeyboard([
+        [btn('✅ Yes, delete', `s:${name}:edit:delete:confirm`)],
+        [btn('❌ Cancel',       `s:${name}:edit`)],
+      ]));
     }
     if (sub === 'delete' && parts[4] === 'confirm') {
-      const ok = storage.deleteStudent(name);
+      const ok = storage.deleteStudent(chatId, name);
       await ctx.reply(ok ? `✅ *${name}* deleted.` : 'Student not found.', md);
       return sendStudentList(ctx);
     }
@@ -252,7 +234,7 @@ async function handleCallback(ctx, bot) {
 // ── Text input handler ────────────────────────────────────────────────────────
 
 async function handleTextInput(ctx, bot) {
-  const chatId = String(ctx.chat.id);
+  const chatId = cid(ctx);
   const session = sessions.get(chatId);
   if (!session) return;
   refreshSession(chatId);
@@ -260,68 +242,58 @@ async function handleTextInput(ctx, bot) {
   const body = ctx.message.text.trim();
   const { state, data: sd } = session;
 
-  if (body === '/cancel') {
-    clearSession(chatId);
-    return ctx.reply('Cancelled.');
-  }
+  if (body === '/cancel') { clearSession(chatId); return ctx.reply('Cancelled.'); }
 
   if (state === 'SETUP_NAME') {
     if (!body || body.length > 50) return;
-    if (storage.getStudent(body)) return ctx.reply(`"${body}" already exists. Enter a different name:`);
+    if (storage.getStudent(chatId, body)) return ctx.reply(`"${body}" already exists. Enter a different name:`);
     setSession(chatId, 'SETUP_YEAR', { name: body });
     return ctx.reply(`Year for *${body}*? (e.g. Y7, Y11)\nType *n/a* to skip`, md);
   }
-
   if (state === 'SETUP_YEAR') {
     const year = body.toLowerCase() === 'n/a' ? null : body;
     setSession(chatId, 'SETUP_DAY', { ...sd, year });
-    return ctx.reply(`Lesson day for *${sd.name}*? (e.g. Monday, Sunday)\nType *n/a* to skip`, md);
+    return ctx.reply(`Lesson day for *${sd.name}*? (e.g. Monday)\nType *n/a* to skip`, md);
   }
-
   if (state === 'SETUP_DAY') {
     const days = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
     const isNA = body.toLowerCase() === 'n/a';
-    if (!isNA && !days.includes(body.trim().toLowerCase()))
-      return ctx.reply('Please enter a valid day (e.g. *Monday*) or *n/a* to skip:', md);
-    const lessonDay = isNA ? null : body.trim().charAt(0).toUpperCase() + body.trim().slice(1).toLowerCase();
+    if (!isNA && !days.includes(body.trim().toLowerCase())) return ctx.reply('Enter a valid day (e.g. *Monday*) or *n/a*:', md);
+    const lessonDay = isNA ? null : body.trim()[0].toUpperCase() + body.trim().slice(1).toLowerCase();
     setSession(chatId, 'SETUP_DATE', { ...sd, lessonDay });
     return ctx.reply(`Next lesson date for *${sd.name}*? (e.g. 12 May)\nType *n/a* to skip`, md);
   }
-
   if (state === 'SETUP_DATE') {
     const isNA = body.toLowerCase() === 'n/a';
     let nextLesson = null;
     if (!isNA) {
       const parsed = parseDate(body);
-      if (!parsed) return ctx.reply(`Couldn't parse that date. Try *12 May* or *n/a* to skip:`, md);
+      if (!parsed) return ctx.reply(`Couldn't parse that date. Try *12 May* or *n/a*:`, md);
       nextLesson = parsed.toISOString();
     }
     setSession(chatId, 'SETUP_TIME', { ...sd, nextLesson });
     return ctx.reply(`Lesson start time for *${sd.name}*? (e.g. 3pm, 15:00)\nType *n/a* to skip`, md);
   }
-
   if (state === 'SETUP_TIME') {
     const isNA = body.toLowerCase() === 'n/a';
     const lessonTime = isNA ? null : parseTime(body);
-    if (!isNA && !lessonTime) return ctx.reply(`Couldn't parse that time. Try *3pm* or *n/a* to skip:`, md);
+    if (!isNA && !lessonTime) return ctx.reply(`Couldn't parse that time. Try *3pm* or *n/a*:`, md);
     setSession(chatId, 'SETUP_DURATION', { ...sd, lessonTime });
     return ctx.reply(`Lesson duration in minutes (e.g. 60, 90)?\nType *n/a* for default (60 min)`, md);
   }
-
   if (state === 'SETUP_DURATION') {
     const isNA = body.toLowerCase() === 'n/a';
     const duration = isNA ? 60 : parseInt(body);
-    if (!isNA && (isNaN(duration) || duration < 1 || duration > 480))
-      return ctx.reply('Please enter minutes (e.g. 60, 90) or *n/a*:', md);
+    if (!isNA && (isNaN(duration) || duration < 1 || duration > 480)) return ctx.reply('Enter minutes (e.g. 60, 90) or *n/a*:', md);
     clearSession(chatId);
-    storage.addStudent(sd.name);
-    const r = storage.getStudent(sd.name);
-    if (sd.year) r.student.year = sd.year;
-    if (sd.lessonDay) r.student.lessonDay = sd.lessonDay;
-    if (sd.nextLesson) r.student.nextLesson = sd.nextLesson;
-    if (sd.lessonTime) r.student.lessonTime = sd.lessonTime;
+    storage.addStudent(chatId, sd.name);
+    const r = storage.getStudent(chatId, sd.name);
+    if (sd.year)       r.student.year           = sd.year;
+    if (sd.lessonDay)  r.student.lessonDay       = sd.lessonDay;
+    if (sd.nextLesson) r.student.nextLesson      = sd.nextLesson;
+    if (sd.lessonTime) r.student.lessonTime      = sd.lessonTime;
     r.student.lessonDuration = duration;
-    storage.saveStudent(r.key, r.student);
+    storage.saveStudent(chatId, r.key, r.student);
     await ctx.reply(
       `✅ *${r.key}* added!\nYear: ${sd.year || 'not set'}\nDay: ${sd.lessonDay || 'not set'}\n` +
       `Next lesson: ${sd.nextLesson ? new Date(sd.nextLesson).toDateString() : 'not set'}` +
@@ -332,24 +304,21 @@ async function handleTextInput(ctx, bot) {
   if (state === 'ADD_TOPIC_NAME') {
     if (!body || body.length > 100) return;
     setSession(chatId, 'ADD_TOPIC_RATING', { ...sd, topic: body });
-    return ctx.reply(`Rating for *${body}*:`, {
-      ...md,
-      ...Markup.inlineKeyboard([
-        [btn('1 — Poor / Not learnt', '_rate:1')],
-        [btn('2 — Getting there', '_rate:2')],
-        [btn('3 — Good', '_rate:3')],
-      ]),
-    });
+    return ctx.reply(`Rating for *${body}*:`, { ...md, ...Markup.inlineKeyboard([
+      [btn('1 — Poor / Not learnt', '_rate:1')],
+      [btn('2 — Getting there',     '_rate:2')],
+      [btn('3 — Good',              '_rate:3')],
+    ])});
   }
 
   if (state === 'LESSON_DATE') {
     const parsed = parseDate(body);
     if (!parsed) return ctx.reply(`Couldn't parse that date. Try *12 May*:`, md);
     clearSession(chatId);
-    const r = storage.getStudent(sd.studentName);
+    const r = storage.getStudent(chatId, sd.studentName);
     if (!r) return ctx.reply('Student not found.');
     r.student.nextLesson = parsed.toISOString();
-    storage.saveStudent(r.key, r.student);
+    storage.saveStudent(chatId, r.key, r.student);
     await ctx.reply(`✅ Next lesson for *${r.key}* set to: ${parsed.toDateString()}`, md);
     return ctx.reply(`*${r.key}*`, { ...md, ...studentMenuKeyboard(r.key) });
   }
@@ -357,8 +326,8 @@ async function handleTextInput(ctx, bot) {
   if (state === 'RENAME_STUDENT') {
     if (!body || body.length > 50) return;
     clearSession(chatId);
-    const result = storage.renameStudent(sd.studentName, body);
-    if (result === 'exists') return ctx.reply(`"${body}" already exists.`);
+    const result = storage.renameStudent(chatId, sd.studentName, body);
+    if (result === 'exists')    return ctx.reply(`"${body}" already exists.`);
     if (result === 'not_found') return ctx.reply('Student not found.');
     await ctx.reply(`✅ Renamed to *${body}*.`, md);
     return ctx.reply(`*${body}*`, { ...md, ...studentMenuKeyboard(body) });
@@ -367,19 +336,18 @@ async function handleTextInput(ctx, bot) {
   if (state === 'SET_YEAR') {
     if (!body || body.length > 10) return;
     clearSession(chatId);
-    const r = storage.getStudent(sd.studentName);
+    const r = storage.getStudent(chatId, sd.studentName);
     if (!r) return ctx.reply('Student not found.');
     r.student.year = body;
-    storage.saveStudent(r.key, r.student);
+    storage.saveStudent(chatId, r.key, r.student);
     await ctx.reply(`✅ Year set to *${body}*.`, md);
     return sendEditMenu(ctx, r.key);
   }
 
   if (state === 'SET_SCHEDULE_DAY') {
     const days = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
-    if (!days.includes(body.trim().toLowerCase()))
-      return ctx.reply('Please enter a valid day (e.g. *Monday*):', md);
-    const formatted = body.trim().charAt(0).toUpperCase() + body.trim().slice(1).toLowerCase();
+    if (!days.includes(body.trim().toLowerCase())) return ctx.reply('Enter a valid day (e.g. *Monday*):', md);
+    const formatted = body.trim()[0].toUpperCase() + body.trim().slice(1).toLowerCase();
     setSession(chatId, 'SET_SCHEDULE_TIME', { ...sd, lessonDay: formatted });
     return ctx.reply(`Lesson time for *${sd.studentName}*? (e.g. 3pm, 15:00):`, md);
   }
@@ -388,24 +356,23 @@ async function handleTextInput(ctx, bot) {
     const time = parseTime(body);
     if (!time) return ctx.reply(`Couldn't parse that time. Try *3pm* or *15:00*:`, md);
     clearSession(chatId);
-    const r = storage.getStudent(sd.studentName);
+    const r = storage.getStudent(chatId, sd.studentName);
     if (!r) return ctx.reply('Student not found.');
-    r.student.lessonDay = sd.lessonDay;
+    r.student.lessonDay  = sd.lessonDay;
     r.student.lessonTime = time;
-    storage.saveStudent(r.key, r.student);
+    storage.saveStudent(chatId, r.key, r.student);
     await ctx.reply(`✅ Lesson set to *${sd.lessonDay}s* at *${formatTime(time)}*.`, md);
     return sendEditMenu(ctx, r.key);
   }
 
   if (state === 'SET_DURATION') {
     const duration = parseInt(body);
-    if (isNaN(duration) || duration < 1 || duration > 480)
-      return ctx.reply('Please enter minutes (e.g. 60, 90):');
+    if (isNaN(duration) || duration < 1 || duration > 480) return ctx.reply('Enter minutes (e.g. 60, 90):');
     clearSession(chatId);
-    const r = storage.getStudent(sd.studentName);
+    const r = storage.getStudent(chatId, sd.studentName);
     if (!r) return ctx.reply('Student not found.');
     r.student.lessonDuration = duration;
-    storage.saveStudent(r.key, r.student);
+    storage.saveStudent(chatId, r.key, r.student);
     await ctx.reply(`✅ Duration set to *${duration} min*.`, md);
     return sendEditMenu(ctx, r.key);
   }
@@ -417,7 +384,7 @@ async function handleTextInput(ctx, bot) {
       if (!parsed) return ctx.reply(`Couldn't parse that date. Try *12 May* or *skip*:`, md);
       nextLesson = parsed.toISOString();
     }
-    const r = storage.getStudent(sd.studentName);
+    const r = storage.getStudent(chatId, sd.studentName);
     const curTime = r?.student?.lessonTime ? formatTime(r.student.lessonTime) : 'not set';
     setSession(chatId, 'OVERRIDE_TIME', { ...sd, nextLesson });
     return ctx.reply(`Enter new time (or *skip* to keep current: ${curTime}):`, md);
@@ -425,15 +392,15 @@ async function handleTextInput(ctx, bot) {
 
   if (state === 'OVERRIDE_TIME') {
     clearSession(chatId);
-    const r = storage.getStudent(sd.studentName);
+    const r = storage.getStudent(chatId, sd.studentName);
     if (!r) return ctx.reply('Student not found.');
     if (sd.nextLesson) r.student.nextLesson = sd.nextLesson;
     if (body.toLowerCase() !== 'skip') {
       const time = parseTime(body);
-      if (!time) { clearSession(chatId); return ctx.reply('Cancelled — invalid time.'); }
+      if (!time) return ctx.reply('Cancelled — invalid time.');
       r.student.lessonTime = time;
     }
-    storage.saveStudent(r.key, r.student);
+    storage.saveStudent(chatId, r.key, r.student);
     const dateStr = r.student.nextLesson ? new Date(r.student.nextLesson).toDateString() : 'unchanged';
     const timeStr = r.student.lessonTime ? formatTime(r.student.lessonTime) : 'unchanged';
     await ctx.reply(`✅ This week: ${dateStr} at ${timeStr}\n_Recurring schedule unchanged._`, md);
@@ -443,10 +410,10 @@ async function handleTextInput(ctx, bot) {
   if (state === 'CONFIRM_REMOVE_TOPIC') {
     clearSession(chatId);
     if (body.toLowerCase() === 'yes') {
-      const r = storage.getStudent(sd.studentName);
+      const r = storage.getStudent(chatId, sd.studentName);
       if (!r) return ctx.reply('Student not found.');
       delete r.student.status[sd.topicKey];
-      storage.saveStudent(r.key, r.student);
+      storage.saveStudent(chatId, r.key, r.student);
       return ctx.reply(`✅ Removed *${sd.topicKey}* from *${r.key}*.`, md);
     }
     return ctx.reply('Cancelled.');
@@ -455,8 +422,9 @@ async function handleTextInput(ctx, bot) {
 
 // ── Output helpers ────────────────────────────────────────────────────────────
 
-async function outputStatus(ctxOrMsg, studentName) {
-  const r = storage.getStudent(studentName);
+async function outputStatus(ctxOrMsg, studentName, chatId) {
+  const id = chatId || ctxOrMsg.from;
+  const r  = storage.getStudent(id, studentName);
   if (!r) return doReply(ctxOrMsg, `Student "${studentName}" not found.`);
   const { key, student } = r;
   const entries = Object.entries(student.status);
@@ -472,8 +440,9 @@ async function outputStatus(ctxOrMsg, studentName) {
   return doReply(ctxOrMsg, out);
 }
 
-async function outputHomework(ctxOrMsg, studentName) {
-  const r = storage.getStudent(studentName);
+async function outputHomework(ctxOrMsg, studentName, chatId) {
+  const id = chatId || ctxOrMsg.from;
+  const r  = storage.getStudent(id, studentName);
   if (!r) return doReply(ctxOrMsg, `Student "${studentName}" not found.`);
   const { key, student } = r;
   const topics = Object.entries(student.status).filter(([,v]) => v === 2).map(([t]) => t);
@@ -483,8 +452,9 @@ async function outputHomework(ctxOrMsg, studentName) {
   return doReply(ctxOrMsg, out);
 }
 
-async function outputLesson(ctxOrMsg, studentName) {
-  const r = storage.getStudent(studentName);
+async function outputLesson(ctxOrMsg, studentName, chatId) {
+  const id = chatId || ctxOrMsg.from;
+  const r  = storage.getStudent(id, studentName);
   if (!r) return doReply(ctxOrMsg, `Student "${studentName}" not found.`);
   const { key, student } = r;
   const topics = Object.entries(student.status).filter(([,v]) => v === 1).map(([t]) => t);
@@ -495,24 +465,25 @@ async function outputLesson(ctxOrMsg, studentName) {
 }
 
 async function sendActiveReminders(ctx) {
-  const data = storage.getData();
+  const chatId  = cid(ctx);
+  const students = storage.getStudents(chatId);
   const lines = [];
-  for (const [name, student] of Object.entries(data.students)) {
+  for (const [name, student] of Object.entries(students)) {
     const hw = student.homeworkReminder?.active;
     const ls = student.lessonReminder?.active;
     if (!hw && !ls) continue;
-    const nextLesson = student.nextLesson ? new Date(student.nextLesson).toDateString() : 'not set';
+    const next = student.nextLesson ? new Date(student.nextLesson).toDateString() : 'not set';
     let entry = `*${name}*${student.year ? ` · ${student.year}` : ''}`;
     if (hw) entry += `\n  📚 Homework reminder active`;
-    if (ls) entry += `\n  📋 Lesson plan reminder · next ${nextLesson}`;
+    if (ls) entry += `\n  📋 Lesson plan reminder · next ${next}`;
     lines.push(entry);
   }
-  const text = lines.length === 0 ? '🔕 No active reminders.' : `*🔔 Active Reminders*\n\n${lines.join('\n\n')}`;
+  const text = lines.length ? `*🔔 Active Reminders*\n\n${lines.join('\n\n')}` : '🔕 No active reminders.';
   await reply(ctx, text, Markup.inlineKeyboard([[btn('⬅️ Back', 'menu')]]));
 }
 
 async function sendHelp(ctx) {
-  const text =
+  await reply(ctx,
     `*📖 Commands*\n\n` +
     `*Status (or use menu):*\n` +
     `\`input status add [topic] [1-3] [name]\`\n` +
@@ -526,16 +497,14 @@ async function sendHelp(ctx) {
     `\`lesson [name] date [date]\`\n\n` +
     `*Students:*\n` +
     `\`student add/rename/delete/year [name]\`\n\n` +
-    `_Type /menu anytime to open the menu._`;
-  await reply(ctx, text, Markup.inlineKeyboard([[btn('⬅️ Back', 'menu')]]));
+    `_Type /menu anytime._`,
+    Markup.inlineKeyboard([[btn('⬅️ Back', 'menu')]]));
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function doReply(ctxOrMsg, text) {
-  if (typeof ctxOrMsg.reply === 'function') {
-    return ctxOrMsg.reply(text, md);
-  }
+  return ctxOrMsg.reply(text, md);
 }
 
 function wrapMsg(ctx) {
