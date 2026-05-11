@@ -163,10 +163,29 @@ function getStudents(chatId) {
   return data.users?.[chatId]?.students || {};
 }
 
+function getPassword(fallback) {
+  const data = getData();
+  return data.password || fallback;
+}
+
+function setPassword(password) {
+  const data = getData();
+  data.password = password;
+  saveData(data);
+}
+
+function generatePassword() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let p = '';
+  for (let i = 0; i < 8; i++) p += chars[Math.floor(Math.random() * chars.length)];
+  return p.slice(0, 4) + '-' + p.slice(4);
+}
+
 module.exports = {
   getData, saveData,
   isRegistered, isPendingSetup, startSetup, completeSetup,
   isAdmin, deleteUser, getAllUsers,
+  getPassword, setPassword, generatePassword,
   getStudents, findStudentKey, getStudent, saveStudent,
   addStudent, renameStudent, deleteStudent,
   resolveStudentSuffix

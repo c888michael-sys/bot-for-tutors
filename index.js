@@ -22,7 +22,8 @@ bot.use(async (ctx, next) => {
     return ctx.reply(`👋 Welcome, *${text}*!${isAdmin ? ' You are the admin.' : ''}\n\nSend /menu to get started.`, { parse_mode: 'Markdown' });
   }
 
-  if (text === config.password) {
+  const currentPassword = storage.getPassword(config.password);
+  if (text === currentPassword) {
     storage.startSetup(chatId);
     return ctx.reply('✅ Password correct!\n\nWhat\'s your name? (so the admin knows who you are)');
   }
@@ -39,6 +40,19 @@ bot.command('testnotify', async ctx => {
     await bot.telegram.sendMessage(id, '🧪 *Test Notification*\nReminders are working correctly!', { parse_mode: 'Markdown' });
   }
   ctx.reply(`✅ Sent test to ${ids.length} user(s).`);
+});
+
+bot.command('password', ctx => {
+  if (!storage.isAdmin(String(ctx.chat.id))) return ctx.reply('⛔ Admin only.');
+  const pw = storage.getPassword(config.password);
+  ctx.reply(`🔑 Current password: \`${pw}\``, { parse_mode: 'Markdown' });
+});
+
+bot.command('newpassword', ctx => {
+  if (!storage.isAdmin(String(ctx.chat.id))) return ctx.reply('⛔ Admin only.');
+  const pw = storage.generatePassword();
+  storage.setPassword(pw);
+  ctx.reply(`✅ New password set: \`${pw}\`\n\nShare this with anyone you want to give access.`, { parse_mode: 'Markdown' });
 });
 
 // Button callbacks
