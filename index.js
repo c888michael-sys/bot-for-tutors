@@ -100,10 +100,14 @@ async function startBot() {
     if (connection === 'close') {
       const code = lastDisconnect?.error?.output?.statusCode;
       if (code === DisconnectReason.loggedOut) {
-        console.log('Logged out. Send "reset bot" on WhatsApp to re-link.');
+        console.log('Logged out — clearing session and restarting for fresh pairing code...');
+        const fs = require('fs');
+        const path = require('path');
+        fs.rmSync(path.join(__dirname, '.baileys_auth'), { recursive: true, force: true });
+        setTimeout(startBot, 2000);
       } else {
         console.log('Reconnecting...');
-        startBot();
+        setTimeout(startBot, 2000);
       }
     }
   });
