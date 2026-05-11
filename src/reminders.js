@@ -12,8 +12,10 @@ function init(client) {
   setTimeout(checkAutoTrigger, 3000);
 }
 
-async function send(chatId, text) {
-  await botClient.telegram.sendMessage(chatId, text, { parse_mode: 'Markdown' });
+async function send(chatId, text, buttons) {
+  const opts = { parse_mode: 'Markdown' };
+  if (buttons) opts.reply_markup = { inline_keyboard: buttons };
+  await botClient.telegram.sendMessage(chatId, text, opts);
 }
 
 // ── Auto-trigger ──────────────────────────────────────────────────────────────
@@ -72,7 +74,9 @@ async function sendDailyReminders() {
       if (student.homeworkReminder.active) {
         const last = student.homeworkReminder.lastSent ? new Date(student.homeworkReminder.lastSent).getTime() : 0;
         if (now - last >= 24 * 60 * 60 * 1000) {
-          await send(chatId, `📚 *Homework Reminder*\nPlease create homework for *${name}*.\n\nReply: _homework ${name} done_ when ready.`);
+          await send(chatId, `📚 *Homework Reminder*\nPlease create homework for *${name}*.`, [
+            [{ text: '✅ Done', callback_data: `rdone:hw:${name}` }, { text: '⏸ Snooze', callback_data: `rsnooze:${name}` }]
+          ]);
           student.homeworkReminder.lastSent = new Date().toISOString();
           changed = true;
         }
@@ -81,7 +85,9 @@ async function sendDailyReminders() {
         const last = student.lessonReminder.lastSent ? new Date(student.lessonReminder.lastSent).getTime() : 0;
         if (now - last >= 48 * 60 * 60 * 1000) {
           const next = student.lessonReminder.nextLesson ? new Date(student.lessonReminder.nextLesson).toDateString() : 'soon';
-          await send(chatId, `📋 *Lesson Plan Reminder*\nPlease prepare a lesson plan for *${name}*.\n📅 Next lesson: *${next}*\n\nReply: _lesson ${name} done_ when ready.`);
+          await send(chatId, `📋 *Lesson Plan Reminder*\nPlease prepare a lesson plan for *${name}*.\n📅 Next lesson: *${next}*.`, [
+            [{ text: '✅ Done', callback_data: `rdone:lesson:${name}` }, { text: '⏸ Snooze', callback_data: `rsnooze:${name}` }]
+          ]);
           student.lessonReminder.lastSent = new Date().toISOString();
           changed = true;
         }

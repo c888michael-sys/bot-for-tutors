@@ -109,6 +109,29 @@ async function handleCallback(ctx, bot) {
   if (cbData === 'students')  return sendStudentList(ctx);
   if (cbData === 'reminders') return sendActiveReminders(ctx);
   if (cbData === 'help')      return sendHelp(ctx);
+
+  // Reminder action buttons
+  if (parts[0] === 'rdone') {
+    const type = parts[1];
+    const name = parts.slice(2).join(':');
+    const reminders = require('./reminders');
+    if (type === 'hw') reminders.stopHomeworkReminder(chatId, name);
+    else reminders.stopLessonReminder(chatId, name);
+    await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => {});
+    return ctx.reply(`✅ ${type === 'hw' ? 'Homework' : 'Lesson plan'} reminder stopped for *${name}*.`, md);
+  }
+  if (parts[0] === 'rsnooze') {
+    const name = parts.slice(1).join(':');
+    const data = storage.getData();
+    const key  = storage.findStudentKey(chatId, name);
+    if (key) {
+      data.users[chatId].students[key].homeworkReminder.active = false;
+      data.users[chatId].students[key].lessonReminder.active   = false;
+      storage.saveData(data);
+    }
+    await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => {});
+    return ctx.reply(`⏸ Reminders snoozed for *${name}*.`, md);
+  }
   if (cbData === 'setup') {
     setSession(chatId, 'SETUP_NAME');
     return ctx.reply('Enter student name:\n\n/cancel to cancel');

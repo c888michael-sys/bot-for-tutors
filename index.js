@@ -24,6 +24,15 @@ bot.use(async (ctx, next) => {
 // Commands
 bot.command(['start', 'menu'], ctx => telegram.sendMainMenu(ctx));
 
+bot.command('testnotify', async ctx => {
+  const users = storage.getAllUsers();
+  const ids = Object.keys(users);
+  for (const id of ids) {
+    await bot.telegram.sendMessage(id, '🧪 *Test Notification*\nReminders are working correctly!', { parse_mode: 'Markdown' });
+  }
+  ctx.reply(`✅ Sent test to ${ids.length} user(s).`);
+});
+
 // Button callbacks
 bot.on('callback_query', async ctx => {
   await ctx.answerCbQuery().catch(() => {});
