@@ -235,14 +235,35 @@ async function handleCallback(ctx, bot) {
   }
 
   if (action === 'snooze') {
-    const data = storage.getData();
-    const key  = storage.findStudentKey(chatId, name);
-    if (!key) return sendStudentList(ctx);
-    data.users[chatId].students[key].homeworkReminder.active = false;
-    data.users[chatId].students[key].lessonReminder.active   = false;
-    storage.saveData(data);
-    await ctx.reply(`⏸ Reminders snoozed for *${key}*.`, md);
-    return ctx.reply(`*${key}*`, { ...md, ...studentMenuKeyboard(key) });
+    const sub = parts[3];
+    const r = storage.getStudent(chatId, name);
+    if (!r) return sendStudentList(ctx);
+    const { key, student } = r;
+
+    // Sub-action: stop a specific reminder
+    if (sub === 'hw' || sub === 'lesson' || sub === 'both') {
+      const data = storage.getData();
+      if (sub === 'hw' || sub === 'both')     data.users[chatId].students[key].homeworkReminder.active = false;
+      if (sub === 'lesson' || sub === 'both') data.users[chatId].students[key].lessonReminder.active   = false;
+      storage.saveData(data);
+      const label = sub === 'hw' ? 'Homework' : sub === 'lesson' ? 'Lesson plan' : 'All';
+      await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => {});
+      return ctx.reply(`✅ ${label} reminder stopped for *${key}*.`, md);
+    }
+
+    // Show which reminders are active
+    const hw = student.homeworkReminder?.active;
+    const ls = student.lessonReminder?.active;
+    if (!hw && !ls) {
+      return reply(ctx, `*${key}* has no active reminders.`,
+        Markup.inlineKeyboard([[btn('⬅️ Back', `s:${key}`)]]));
+    }
+    const rows = [];
+    if (hw) rows.push([btn('📚 Stop Homework Reminder', `s:${key}:snooze:hw`)]);
+    if (ls) rows.push([btn('📋 Stop Lesson Plan Reminder', `s:${key}:snooze:lesson`)]);
+    if (hw && ls) rows.push([btn('🛑 Stop Both', `s:${key}:snooze:both`)]);
+    rows.push([btn('⬅️ Back', `s:${key}`)]);
+    return reply(ctx, `*Active Reminders: ${key}*\nSelect which to stop:`, Markup.inlineKeyboard(rows));
   }
 
   if (action === 'edit') {
