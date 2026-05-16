@@ -1,9 +1,58 @@
 const { Telegraf } = require('telegraf');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const config = require('./data/config.json');
 const telegram = require('./src/telegram');
 const commands = require('./src/commands');
 const reminders = require('./src/reminders');
 const storage = require('./src/save');
+
+const DUPLICATE_ALERT_STATE = path.join(__dirname, 'data', '.duplicate_alert_count');
+const DUPLICATE_ALERT_MAX = 3;
+
+async function checkForDuplicatePoller(token) {
+  const callTelegram = async (method, payload) => {
+    const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload || {}),
+    });
+    return res.json().catch(() => ({ ok: false }));
+  };
+
+  const me = await callTelegram('getMe', {});
+  if (!me.ok) {
+    console.error('getMe failed during startup probe:', me);
+    return;
+  }
+  console.log(`Bot @${me.result.username} starting as PID ${process.pid} (tutor bot)`);
+
+  const probe = await callTelegram('getUpdates', { timeout: 0, limit: 1 });
+  if (probe.error_code !== 409) {
+    try { fs.unlinkSync(DUPLICATE_ALERT_STATE); } catch (e) { /* fine */ }
+    return;
+  }
+
+  let count = 0;
+  try { count = parseInt(fs.readFileSync(DUPLICATE_ALERT_STATE, 'utf8').trim()) || 0; } catch (e) { /* fine */ }
+
+  const adminId = storage.getData().adminChatId;
+  if (count < DUPLICATE_ALERT_MAX && adminId) {
+    const text =
+      `tutor bot: another instance is polling.\n` +
+      `Host: ${os.hostname()}\n` +
+      `PID refusing to start: ${process.pid}\n` +
+      `Alert ${count + 1}/${DUPLICATE_ALERT_MAX} — will go silent after this.\n` +
+      `Fix: ssh in, pm2 list, delete any duplicate pm2 entry pointing at this script.`;
+    const sendResult = await callTelegram('sendMessage', { chat_id: adminId, text });
+    if (!sendResult.ok) console.error('Failed to send duplicate-alert:', sendResult);
+    try { fs.writeFileSync(DUPLICATE_ALERT_STATE, String(count + 1)); } catch (e) { console.error('Failed to write alert state:', e); }
+  }
+
+  console.error(`409 Conflict on startup probe — another instance is polling. Refusing to start (alert ${Math.min(count + 1, DUPLICATE_ALERT_MAX)}/${DUPLICATE_ALERT_MAX}).`);
+  process.exit(1);
+}
 
 const bot = new Telegraf(config.botToken);
 
@@ -84,9 +133,12 @@ bot.on('text', async ctx => {
   await commands.handle(msg, bot);
 });
 
-bot.launch();
-reminders.init(bot);
-console.log('Tutor bot running on Telegram. Message the bot to get started.');
+(async () => {
+  await checkForDuplicatePoller(config.botToken);
+  await bot.launch();
+  reminders.init(bot);
+  console.log('Tutor bot running on Telegram. Message the bot to get started.');
+})();
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
