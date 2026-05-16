@@ -7,6 +7,38 @@ const SESSION_TIMEOUT = 10 * 60 * 1000;
 
 const btn = (text, data) => Markup.button.callback(text, data);
 
+// ── Persistent main-menu (reply keyboard) ─────────────────────────────────────
+
+const REPLY_BTN = {
+  STUDENTS:    '👤 Students',
+  REMINDERS:   '🔔 Reminders',
+  ADD_STUDENT: '➕ Add Student',
+  HELP:        '📖 Help',
+  ADMIN:       '👑 Admin Panel',
+};
+const ALL_REPLY_LABELS = new Set(Object.values(REPLY_BTN));
+
+function mainReplyKeyboard(isAdmin) {
+  const rows = [
+    [REPLY_BTN.STUDENTS, REPLY_BTN.REMINDERS],
+    [REPLY_BTN.ADD_STUDENT, REPLY_BTN.HELP],
+  ];
+  if (isAdmin) rows.push([REPLY_BTN.ADMIN]);
+  return {
+    reply_markup: {
+      keyboard: rows.map(row => row.map(text => ({ text }))),
+      resize_keyboard: true,
+      is_persistent: true,
+    },
+  };
+}
+
+const removeReplyKeyboard = { reply_markup: { remove_keyboard: true } };
+
+function isMainMenuButton(text) {
+  return ALL_REPLY_LABELS.has(text);
+}
+
 // ── Session management ────────────────────────────────────────────────────────
 
 function hasSession(chatId) {
@@ -22,12 +54,6 @@ function clearSession(chatId) { sessions.delete(chatId); }
 function refreshSession(chatId) { const s = sessions.get(chatId); if (s) s.lastActive = Date.now(); }
 
 // ── Keyboards ─────────────────────────────────────────────────────────────────
-
-const mainMenuKeyboard = (isAdmin) => Markup.inlineKeyboard([
-  [btn('👤 Students', 'students'), btn('🔔 Reminders', 'reminders')],
-  [btn('➕ Add Student', 'setup'), btn('📖 Help', 'help')],
-  ...(isAdmin ? [[btn('👑 Admin Panel', 'admin')]] : []),
-]);
 
 const studentListKeyboard = (names) => {
   const rows = names.map(n => [btn(n, `s:${n}`)]);
@@ -66,7 +92,37 @@ const cid = (ctx) => String(ctx.chat.id);
 // ── Menu senders ──────────────────────────────────────────────────────────────
 
 async function sendMainMenu(ctx) {
-  await reply(ctx, '*🎓 Tutor Bot*\n\nWhat would you like to do?', mainMenuKeyboard(storage.isAdmin(cid(ctx))));
+  // If invoked from an inline callback, strip the inline buttons on that source message
+  // so the chat doesn't keep a stale floating menu around.
+  if (ctx.callbackQuery) {
+    await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => {});
+  }
+  await ctx.reply(
+    '*🎓 Tutor Bot*\n\nTap a menu button below.',
+    { ...md, ...mainReplyKeyboard(storage.isAdmin(cid(ctx))) }
+  );
+}
+
+async function forceRefreshMainMenu(ctx) {
+  // Used by /menu — clears any in-progress session and forces Telegram clients to drop
+  // any stale persistent-keyboard cache by sending remove_keyboard before re-attaching.
+  clearSession(cid(ctx));
+  await ctx.reply('Refreshing menu…', removeReplyKeyboard);
+  await sendMainMenu(ctx);
+}
+
+async function handleMainMenuButton(ctx) {
+  const text = ctx.message.text;
+  const chatId = cid(ctx);
+  clearSession(chatId);
+  if (text === REPLY_BTN.STUDENTS)    return sendStudentList(ctx);
+  if (text === REPLY_BTN.REMINDERS)   return sendActiveReminders(ctx);
+  if (text === REPLY_BTN.ADD_STUDENT) {
+    setSession(chatId, 'SETUP_NAME');
+    return ctx.reply('Enter student name:\n\n/cancel to cancel');
+  }
+  if (text === REPLY_BTN.HELP)        return sendHelp(ctx);
+  if (text === REPLY_BTN.ADMIN)       return sendAdminPanel(ctx);
 }
 
 async function sendStudentList(ctx) {
@@ -752,7 +808,9 @@ function askConfirmDelete(chatId, studentName) {
 }
 
 module.exports = {
-  hasSession, handleCallback, handleTextInput,
-  sendMainMenu, sendStudentMenu, outputStatus, outputHomework, outputLesson,
+  hasSession, clearSession, handleCallback, handleTextInput,
+  sendMainMenu, forceRefreshMainMenu, isMainMenuButton, handleMainMenuButton,
+  mainReplyKeyboard,
+  sendStudentMenu, outputStatus, outputHomework, outputLesson,
   sendActiveReminders, wrapMsg, askConfirmRemoveTopic, askConfirmDelete,
 };

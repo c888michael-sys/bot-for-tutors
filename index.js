@@ -19,7 +19,10 @@ bot.use(async (ctx, next) => {
     if (!text || text.startsWith('/')) return ctx.reply('Please enter your name:');
     storage.completeSetup(chatId, text);
     const isAdmin = storage.isAdmin(chatId);
-    return ctx.reply(`👋 Welcome, *${text}*!${isAdmin ? ' You are the admin.' : ''}\n\nSend /menu to get started.`, { parse_mode: 'Markdown' });
+    return ctx.reply(
+      `👋 Welcome, *${text}*!${isAdmin ? ' You are the admin.' : ''}\n\nTap a menu button below, or type /menu anytime to refresh it.`,
+      { parse_mode: 'Markdown', ...telegram.mainReplyKeyboard(isAdmin) }
+    );
   }
 
   const currentPassword = storage.getPassword(config.password);
@@ -31,7 +34,8 @@ bot.use(async (ctx, next) => {
 });
 
 // Commands
-bot.command(['start', 'menu'], ctx => telegram.sendMainMenu(ctx));
+bot.command('start', ctx => telegram.sendMainMenu(ctx));
+bot.command('menu', ctx => telegram.forceRefreshMainMenu(ctx));
 
 bot.command('testnotify', async ctx => {
   const users = storage.getAllUsers();
@@ -64,6 +68,13 @@ bot.on('callback_query', async ctx => {
 // Text messages
 bot.on('text', async ctx => {
   const chatId = String(ctx.chat.id);
+  const text = ctx.message.text;
+
+  // Persistent reply-keyboard buttons always navigate, even mid-session (escape hatch)
+  if (telegram.isMainMenuButton(text)) {
+    return telegram.handleMainMenuButton(ctx);
+  }
+
   // If in a session (text input expected during a flow)
   if (telegram.hasSession(chatId)) {
     return telegram.handleTextInput(ctx, bot);
