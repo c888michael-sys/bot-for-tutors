@@ -122,7 +122,7 @@ Each reminder message includes a Done / Snooze button. Use the in-menu **🔔 Re
 
 ```bash
 npm install -g pm2
-pm2 start index.js --name tutor-bot
+pm2 start index.js --name tutorstatsbot
 pm2 save
 pm2 startup   # run the command it prints
 ```
@@ -139,11 +139,11 @@ pm2 list
 
 If pm2 shows the app twice or with `instances > 1`, fix it:
 ```bash
-pm2 scale tutor-bot 1       # if exec_mode is cluster with >1 instance
+pm2 scale tutorstatsbot 1       # if exec_mode is cluster with >1 instance
 # or:
 pm2 delete <stale-id>       # if there are duplicate entries
 pm2 save
-pm2 restart tutor-bot
+pm2 restart tutorstatsbot
 ```
 
 ---
@@ -164,6 +164,6 @@ Back this file up if it matters to you — `pm2 restart` doesn't touch it but a 
 ```bash
 cd /path/to/bot-for-tutors
 git pull
-pm2 restart tutor-bot
-pm2 logs tutor-bot --lines 30 --nostream    # verify it came up clean
+pm2 restart tutorstatsbot
+pm2 logs tutorstatsbot --lines 30 --nostream    # verify it came up clean
 ```
