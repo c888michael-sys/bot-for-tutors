@@ -83,8 +83,7 @@ bot.use(async (ctx, next) => {
 });
 
 // Commands
-bot.command('start', ctx => telegram.sendMainMenu(ctx));
-bot.command('menu', ctx => telegram.forceRefreshMainMenu(ctx));
+bot.command(['start', 'menu'], ctx => telegram.forceRefreshMainMenu(ctx));
 
 bot.command('testnotify', async ctx => {
   const users = storage.getAllUsers();
